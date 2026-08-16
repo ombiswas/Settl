@@ -8,6 +8,8 @@ import com.settl.backend.auth.dto.ResendVerificationRequest;
 import com.settl.backend.auth.dto.UserDto;
 import com.settl.backend.auth.dto.VerifyEmailResponse;
 import com.settl.backend.common.ApiResponse;
+import com.settl.backend.common.ratelimit.RateLimitType;
+import com.settl.backend.common.ratelimit.RateLimited;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -37,7 +39,8 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    @Operation(summary = "Register new user", description = "Creates a new user account and dispatches an email verification link")
+    @RateLimited(limit = 3, windowSeconds = 3600, keyPrefix = "register", type = RateLimitType.IP)
+    @Operation(summary = "Register new user", description = "Creates a new user account and dispatches an email verification link (Limit: 3/hour/IP)")
     public ResponseEntity<ApiResponse<RegisterResponse>> register(@Valid @RequestBody RegisterRequest request) {
         RegisterResponse response = authService.register(request);
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -52,7 +55,8 @@ public class AuthController {
     }
 
     @PostMapping("/resend-verification")
-    @Operation(summary = "Resend verification email", description = "Dispatches a new verification token to the user email if unverified")
+    @RateLimited(limit = 3, windowSeconds = 3600, keyPrefix = "resend_verification", type = RateLimitType.IP)
+    @Operation(summary = "Resend verification email", description = "Dispatches a new verification token to the user email if unverified (Limit: 3/hour/IP)")
     public ResponseEntity<ApiResponse<Void>> resendVerification(@Valid @RequestBody ResendVerificationRequest request) {
         authService.resendVerification(request);
         return ResponseEntity.ok(ApiResponse.success(
@@ -62,7 +66,8 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    @Operation(summary = "Log in user", description = "Authenticates credentials and returns a short-lived access token + httpOnly refresh token cookie")
+    @RateLimited(limit = 5, windowSeconds = 900, keyPrefix = "login", type = RateLimitType.IP)
+    @Operation(summary = "Log in user", description = "Authenticates credentials and returns a short-lived access token + httpOnly refresh token cookie (Limit: 5/15min/IP)")
     public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody LoginRequest request) {
         AuthService.LoginResult result = authService.login(request);
         return ResponseEntity.ok()
