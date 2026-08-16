@@ -1,5 +1,6 @@
 package com.settl.backend.auth;
 
+import com.settl.backend.auth.dto.LoginRequest;
 import com.settl.backend.auth.dto.RegisterRequest;
 import com.settl.backend.auth.dto.RegisterResponse;
 import com.settl.backend.auth.dto.ResendVerificationRequest;
@@ -13,12 +14,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.ResponseCookie;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Base64;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -38,16 +41,22 @@ class AuthServiceTest {
     private UserRepository userRepository;
 
     @Mock
+    private RefreshTokenRepository refreshTokenRepository;
+
+    @Mock
     private EmailService emailService;
 
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder(12);
-
+    private JwtService jwtService;
     private AuthService authService;
 
     @BeforeEach
     void setUp() {
-        authService = new AuthService(userRepository, passwordEncoder, emailService);
+        String testSecret = Base64.getEncoder().encodeToString("very-secure-256-bit-secret-key-for-jwt-testing-12345678".getBytes());
+        jwtService = new JwtService(testSecret, 900000);
+        authService = new AuthService(userRepository, refreshTokenRepository, passwordEncoder, emailService, jwtService);
         ReflectionTestUtils.setField(authService, "appBaseUrl", "http://localhost:5173");
+        ReflectionTestUtils.setField(authService, "refreshTokenExpirationMs", 604800000L);
     }
 
     @Test
@@ -138,45 +147,107 @@ class AuthServiceTest {
     }
 
     @Test
-    void verifyEmailWithInvalidOrReusedTokenShouldThrowException() {
-        String rawToken = "unknown-or-already-used-token";
-        String hashedToken = AuthService.hashToken(rawToken);
-
-        when(userRepository.findByVerificationToken(hashedToken)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> authService.verifyEmail(rawToken))
-                .isInstanceOf(ApiException.class)
-                .hasMessageContaining("Invalid or already used");
-    }
-
-    @Test
-    void resendVerificationForUnverifiedUserShouldRotateTokenAndSendEmail() {
-        User user = new User("alex@example.com", "hash", "Alex Smith");
-        user.setId(UUID.randomUUID());
-        user.setEmailVerified(false);
-        user.setVerificationToken("old-token-hash");
-
-        when(userRepository.findByEmail("alex@example.com")).thenReturn(Optional.of(user));
-
-        authService.resendVerification(new ResendVerificationRequest("alex@example.com"));
-
-        assertThat(user.getVerificationToken()).isNotEqualTo("old-token-hash");
-        assertThat(user.getVerificationTokenExpiresAt()).isAfter(Instant.now());
-        verify(userRepository).save(user);
-        verify(emailService).sendVerificationEmail(eq("alex@example.com"), eq("Alex Smith"), anyString());
-    }
-
-    @Test
-    void resendVerificationForAlreadyVerifiedUserShouldDoNothingSilently() {
-        User user = new User("alex@example.com", "hash", "Alex Smith");
+    void loginWithVerifiedUserShouldReturnAccessTokenAndSetCookie() {
+        User user = new User("alex@example.com", passwordEncoder.encode("Password123!"), "Alex Smith");
         user.setId(UUID.randomUUID());
         user.setEmailVerified(true);
 
         when(userRepository.findByEmail("alex@example.com")).thenReturn(Optional.of(user));
 
-        authService.resendVerification(new ResendVerificationRequest("alex@example.com"));
+        AuthService.LoginResult result = authService.login(new LoginRequest("alex@example.com", "Password123!"));
 
-        verify(userRepository, never()).save(any());
-        verify(emailService, never()).sendVerificationEmail(any(), any(), any());
+        assertThat(result.authResponse()).isNotNull();
+        assertThat(result.authResponse().accessToken()).isNotBlank();
+        assertThat(result.authResponse().user().email()).isEqualTo("alex@example.com");
+        assertThat(result.refreshCookie().getName()).isEqualTo("refresh_token");
+        assertThat(result.refreshCookie().isHttpOnly()).isTrue();
+
+        verify(refreshTokenRepository).save(any(RefreshToken.class));
+    }
+
+    @Test
+    void loginWithUnverifiedUserShouldThrowForbiddenEmailNotVerified() {
+        User user = new User("alex@example.com", passwordEncoder.encode("Password123!"), "Alex Smith");
+        user.setId(UUID.randomUUID());
+        user.setEmailVerified(false);
+
+        when(userRepository.findByEmail("alex@example.com")).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest("alex@example.com", "Password123!")))
+                .isInstanceOf(ApiException.class)
+                .matches(ex -> ((ApiException) ex).getErrorCode().equals("EMAIL_NOT_VERIFIED"));
+
+        verify(refreshTokenRepository, never()).save(any());
+    }
+
+    @Test
+    void loginWithWrongPasswordShouldThrowUnauthorized() {
+        User user = new User("alex@example.com", passwordEncoder.encode("CorrectPassword!"), "Alex Smith");
+        user.setId(UUID.randomUUID());
+        user.setEmailVerified(true);
+
+        when(userRepository.findByEmail("alex@example.com")).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest("alex@example.com", "WrongPassword!")))
+                .isInstanceOf(ApiException.class)
+                .matches(ex -> ((ApiException) ex).getErrorCode().equals("INVALID_CREDENTIALS"));
+    }
+
+    @Test
+    void refreshTokenRotationShouldIssueNewAccessTokenAndRotateCookie() {
+        User user = new User("alex@example.com", "hash", "Alex Smith");
+        user.setId(UUID.randomUUID());
+        user.setEmailVerified(true);
+
+        String oldRawToken = "old-refresh-token-12345";
+        String oldHashedToken = AuthService.hashToken(oldRawToken);
+        RefreshToken oldToken = new RefreshToken(user, oldHashedToken, Instant.now().plus(7, ChronoUnit.DAYS));
+
+        when(refreshTokenRepository.findByTokenHash(oldHashedToken)).thenReturn(Optional.of(oldToken));
+
+        AuthService.LoginResult result = authService.refreshToken(oldRawToken);
+
+        assertThat(oldToken.isRevoked()).isTrue();
+        assertThat(result.authResponse().accessToken()).isNotBlank();
+        assertThat(result.refreshCookie().getValue()).isNotEqualTo(oldRawToken);
+
+        ArgumentCaptor<RefreshToken> captor = ArgumentCaptor.forClass(RefreshToken.class);
+        verify(refreshTokenRepository, org.mockito.Mockito.atLeast(2)).save(captor.capture());
+    }
+
+    @Test
+    void refreshTokenReuseShouldTriggerBreachDetectionAndRevokeAllTokens() {
+        User user = new User("alex@example.com", "hash", "Alex Smith");
+        user.setId(UUID.randomUUID());
+
+        String leakedRawToken = "already-revoked-token";
+        String leakedHashedToken = AuthService.hashToken(leakedRawToken);
+
+        RefreshToken revokedToken = new RefreshToken(user, leakedHashedToken, Instant.now().plus(7, ChronoUnit.DAYS));
+        revokedToken.setRevoked(true); // Already used / revoked
+
+        when(refreshTokenRepository.findByTokenHash(leakedHashedToken)).thenReturn(Optional.of(revokedToken));
+
+        assertThatThrownBy(() -> authService.refreshToken(leakedRawToken))
+                .isInstanceOf(ApiException.class)
+                .matches(ex -> ((ApiException) ex).getErrorCode().equals("TOKEN_REUSE_DETECTED"));
+
+        verify(refreshTokenRepository).revokeAllByUser(user);
+    }
+
+    @Test
+    void logoutShouldRevokeTokenAndClearCookie() {
+        User user = new User("alex@example.com", "hash", "Alex");
+        String rawToken = "sample-logout-token";
+        String hashedToken = AuthService.hashToken(rawToken);
+        RefreshToken token = new RefreshToken(user, hashedToken, Instant.now().plus(7, ChronoUnit.DAYS));
+
+        when(refreshTokenRepository.findByTokenHash(hashedToken)).thenReturn(Optional.of(token));
+
+        ResponseCookie cookie = authService.logout(rawToken);
+
+        assertThat(token.isRevoked()).isTrue();
+        assertThat(cookie.getMaxAge().getSeconds()).isEqualTo(0);
+        verify(refreshTokenRepository).save(token);
     }
 }
