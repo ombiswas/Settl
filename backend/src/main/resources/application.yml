@@ -54,8 +54,8 @@ spring:
 
 app:
   jwt:
-    secret: ${JWT_SECRET:}
-    refresh-secret: ${JWT_REFRESH_SECRET:}
+    secret: ${JWT_SECRET:c2V0dGwtZGV2ZWxvcG1lbnQtYW5kLXRlc3Qtand0LXNlY3JldC1rZXktbXVzdC1iZS1hdC1sZWFzdC0yNTYtYml0cy1sb25nLWZvci1obWFjLXNoYS0yNTY=}
+    refresh-secret: ${JWT_REFRESH_SECRET:c2V0dGwtZGV2ZWxvcG1lbnQtYW5kLXRlc3QtcmVmcmVzaC1zZWNyZXQta2V5LW11c3QtYmUtYXQtbGVhc3QtMjU2LWJpdHMtbG9uZw==}
     access-token-expiration-ms: ${JWT_ACCESS_EXPIRATION_MS:900000} # 15 minutes
     refresh-token-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000} # 7 days
   fx:
