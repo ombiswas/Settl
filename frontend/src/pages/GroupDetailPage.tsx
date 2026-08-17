@@ -11,10 +11,17 @@ import {
 } from '../api/client'
 import { useAuthStore } from '../store/authStore'
 import { formatCurrency, formatDate } from '../lib/utils'
+import { exportExpensesToCsv, exportSettlementsToCsv, printGroupSummary } from '../lib/exportUtils'
 import { CategoryBadge } from '../components/expenses/CategoryBadge'
 import { CreateExpenseModal } from '../components/expenses/CreateExpenseModal'
+import { CreateRecurringExpenseModal } from '../components/recurring/CreateRecurringExpenseModal'
+import { RecordSettlementModal } from '../components/settlements/RecordSettlementModal'
 import { BalanceGraph } from '../components/balances/BalanceGraph'
-import type { CreateExpenseRequest } from '../types/api'
+import type {
+  CreateExpenseRequest,
+  CreateRecurringExpenseRequest,
+  CreateSettlementRequest,
+} from '../types/api'
 import {
   ArrowLeft,
   Users,
@@ -29,7 +36,10 @@ import {
   Trash2,
   Filter,
   Search,
-  CheckCircle2,
+  Download,
+  Printer,
+  Ban,
+  Zap,
 } from 'lucide-react'
 
 export const GroupDetailPage: React.FC = () => {
@@ -39,6 +49,10 @@ export const GroupDetailPage: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'expenses' | 'balances' | 'settlements' | 'recurring' | 'activity'>('expenses')
   const [showAddExpenseModal, setShowAddExpenseModal] = useState(false)
+  const [showAddRecurringModal, setShowAddRecurringModal] = useState(false)
+  const [showRecordSettlementModal, setShowRecordSettlementModal] = useState(false)
+  const [prefilledSettlement, setPrefilledSettlement] = useState<{ toUserId?: string; amount?: number }>({})
+
   const [showAddMember, setShowAddMember] = useState(false)
   const [memberEmail, setMemberEmail] = useState('')
   const [memberIsAdmin, setMemberIsAdmin] = useState(false)
@@ -152,6 +166,30 @@ export const GroupDetailPage: React.FC = () => {
     },
   })
 
+  // Create Recurring Expense Mutation
+  const createRecurringMutation = useMutation({
+    mutationFn: async (data: CreateRecurringExpenseRequest) => {
+      if (!groupId) return
+      await recurringApi.create(groupId, data)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recurring', groupId] })
+      queryClient.invalidateQueries({ queryKey: ['activity', groupId] })
+    },
+  })
+
+  // Deactivate Recurring Mutation
+  const deactivateRecurringMutation = useMutation({
+    mutationFn: async (recurringId: string) => {
+      if (!groupId) return
+      await recurringApi.deactivate(groupId, recurringId)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recurring', groupId] })
+      queryClient.invalidateQueries({ queryKey: ['activity', groupId] })
+    },
+  })
+
   // Add Member Mutation
   const addMemberMutation = useMutation({
     mutationFn: async () => {
@@ -168,14 +206,9 @@ export const GroupDetailPage: React.FC = () => {
 
   // Record Settlement Mutation
   const recordSettlementMutation = useMutation({
-    mutationFn: async ({ toUserId, amount }: { toUserId: string; amount: number }) => {
+    mutationFn: async (data: CreateSettlementRequest) => {
       if (!groupId) return
-      await settlementsApi.record(groupId, {
-        toUserId,
-        amount,
-        currency: group?.defaultCurrency || 'USD',
-        isSimplified: true,
-      })
+      await settlementsApi.record(groupId, data)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['balances', groupId] })
@@ -241,12 +274,32 @@ export const GroupDetailPage: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {/* Export Dropdown / Buttons */}
+          <button
+            onClick={() => exportExpensesToCsv(group.name, expenses || [])}
+            disabled={!expenses || expenses.length === 0}
+            title="Export CSV"
+            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 disabled:opacity-50 transition cursor-pointer"
+          >
+            <Download className="h-4 w-4 text-slate-500" />
+            <span className="hidden sm:inline">CSV</span>
+          </button>
+          <button
+            onClick={() => printGroupSummary(group.name, group.defaultCurrency, expenses || [])}
+            disabled={!expenses || expenses.length === 0}
+            title="Print / PDF Statement"
+            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 disabled:opacity-50 transition cursor-pointer"
+          >
+            <Printer className="h-4 w-4 text-slate-500" />
+            <span className="hidden sm:inline">PDF</span>
+          </button>
+
           <button
             onClick={() => setShowAddMember(true)}
             className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 transition cursor-pointer"
           >
             <UserPlus className="h-4 w-4 text-slate-500" />
-            <span>Invite Member</span>
+            <span>Invite</span>
           </button>
           <button
             onClick={() => setShowAddExpenseModal(true)}
@@ -416,6 +469,68 @@ export const GroupDetailPage: React.FC = () => {
               />
             )}
 
+            {/* Settle Up Action Card */}
+            {suggestedData && suggestedData.suggestedTransactions?.length > 0 && (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-emerald-800">
+                    <Zap className="h-5 w-5 text-emerald-600" />
+                    <h3 className="text-base font-bold">Smart Debt Simplification</h3>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setPrefilledSettlement({})
+                      setShowRecordSettlementModal(true)
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition cursor-pointer"
+                  >
+                    <span>Custom Repayment</span>
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-emerald-700">
+                  Optimal path to zero balance: {suggestedData.transactionCount} transactions needed.
+                </p>
+
+                <div className="mt-4 space-y-2.5">
+                  {suggestedData.suggestedTransactions.map((tx, idx) => {
+                    const isCurrentUserPayer = user?.id === tx.fromUserId
+                    return (
+                      <div
+                        key={idx}
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-emerald-200/80 bg-white p-3.5 shadow-xs"
+                      >
+                        <div className="text-sm">
+                          <span className="font-bold text-slate-900">{tx.fromUserName}</span> pays{' '}
+                          <span className="font-bold text-slate-900">{tx.toUserName}</span>{' '}
+                          <span className="font-bold text-emerald-700">
+                            {formatCurrency(tx.amount, tx.currency)}
+                          </span>
+                        </div>
+
+                        {isCurrentUserPayer && (
+                          <button
+                            onClick={() =>
+                              recordSettlementMutation.mutate({
+                                toUserId: tx.toUserId,
+                                amount: tx.amount,
+                                currency: tx.currency,
+                                isSimplified: true,
+                              })
+                            }
+                            disabled={recordSettlementMutation.isPending}
+                            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition cursor-pointer"
+                          >
+                            <CheckCircle className="h-3.5 w-3.5" />
+                            <span>Confirm Repayment</span>
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Member Net Balances */}
             {balancesData && (
               <div>
@@ -474,10 +589,35 @@ export const GroupDetailPage: React.FC = () => {
         {/* SETTLEMENTS LEDGER TAB */}
         {activeTab === 'settlements' && (
           <div>
-            <h3 className="text-base font-bold text-slate-900">Settlement Ledger</h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Historical log of debt repayments recorded between group members.
-            </p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Settlement Ledger</h3>
+                <p className="text-xs text-slate-500">
+                  Historical log of debt repayments recorded between group members.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => exportSettlementsToCsv(group.name, settlements || [])}
+                  disabled={!settlements || settlements.length === 0}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition cursor-pointer"
+                >
+                  <Download className="h-3.5 w-3.5 text-slate-500" />
+                  <span>Export Ledger</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setPrefilledSettlement({})
+                    setShowRecordSettlementModal(true)
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition cursor-pointer"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Log Settlement</span>
+                </button>
+              </div>
+            </div>
 
             {settlements && settlements.length > 0 ? (
               <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-xs">
@@ -489,9 +629,12 @@ export const GroupDetailPage: React.FC = () => {
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-slate-900">
-                          {s.fromUserName} paid {s.toUserName}
+                          <span className="font-bold">{s.fromUserName}</span> paid{' '}
+                          <span className="font-bold">{s.toUserName}</span>
                         </p>
-                        <p className="text-xs text-slate-500">{formatDate(s.settledAt)}</p>
+                        <p className="text-xs text-slate-500">
+                          {formatDate(s.settledAt)} • {s.simplified ? 'Simplified' : 'Direct'}
+                        </p>
                       </div>
                     </div>
                     <p className="font-bold text-emerald-700">
@@ -511,35 +654,72 @@ export const GroupDetailPage: React.FC = () => {
         {/* RECURRING TAB */}
         {activeTab === 'recurring' && (
           <div>
-            <h3 className="text-base font-bold text-slate-900">Recurring Expenses</h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Automated templates that trigger on a scheduled interval.
-            </p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Recurring Expenses</h3>
+                <p className="text-xs text-slate-500">
+                  Automated templates that trigger on a scheduled interval (rent, bills, utilities).
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowAddRecurringModal(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-purple-700 transition cursor-pointer"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>New Template</span>
+              </button>
+            </div>
 
             {recurringList && recurringList.length > 0 ? (
               <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-xs">
-                {recurringList.map((r) => (
-                  <div key={r.id} className="flex items-center justify-between p-4">
-                    <div>
-                      <p className="font-semibold text-slate-900">{r.templateDescription}</p>
-                      <p className="text-xs text-slate-500">
-                        {r.frequency} • Paid by {r.paidByName} • Next run: {formatDate(r.nextRunAt)}
-                      </p>
+                {recurringList.map((r) => {
+                  const canDeactivate = r.paidById === user?.id || isUserAdmin
+                  return (
+                    <div key={r.id} className="flex items-center justify-between p-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-slate-900">{r.templateDescription}</p>
+                          <span
+                            className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${
+                              r.active
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : 'bg-slate-100 text-slate-500'
+                            }`}
+                          >
+                            {r.active ? 'Active' : 'Paused'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {r.frequency} • Paid by {r.paidByName} • Next run:{' '}
+                          {formatDate(r.nextRunAt)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <p className="font-bold text-slate-900">
+                          {formatCurrency(r.amount, r.currency)}
+                        </p>
+                        {canDeactivate && r.active && (
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Deactivate recurring "${r.templateDescription}"?`)) {
+                                deactivateRecurringMutation.mutate(r.id)
+                              }
+                            }}
+                            title="Pause / Deactivate Template"
+                            className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 transition cursor-pointer"
+                          >
+                            <Ban className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-bold text-slate-900">
-                        {formatCurrency(r.amount, r.currency)}
-                      </p>
-                      <span className="text-[11px] font-medium text-emerald-700">
-                        {r.active ? 'Active' : 'Paused'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             ) : (
               <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white p-12 text-center text-sm text-slate-500">
-                No recurring expenses configured.
+                No recurring expense templates set up.
               </div>
             )}
           </div>
@@ -586,6 +766,30 @@ export const GroupDetailPage: React.FC = () => {
         members={group.members || []}
         defaultCurrency={group.defaultCurrency}
         currentUserId={user?.id}
+      />
+
+      {/* Add Recurring Modal */}
+      <CreateRecurringExpenseModal
+        isOpen={showAddRecurringModal}
+        onClose={() => setShowAddRecurringModal(false)}
+        onSubmit={async (data) => {
+          await createRecurringMutation.mutateAsync(data)
+        }}
+        defaultCurrency={group.defaultCurrency}
+      />
+
+      {/* Record Settlement Modal */}
+      <RecordSettlementModal
+        isOpen={showRecordSettlementModal}
+        onClose={() => setShowRecordSettlementModal(false)}
+        onSubmit={async (data) => {
+          await recordSettlementMutation.mutateAsync(data)
+        }}
+        members={group.members || []}
+        defaultCurrency={group.defaultCurrency}
+        currentUserId={user?.id}
+        prefilledToUserId={prefilledSettlement.toUserId}
+        prefilledAmount={prefilledSettlement.amount}
       />
 
       {/* Invite Member Modal */}
