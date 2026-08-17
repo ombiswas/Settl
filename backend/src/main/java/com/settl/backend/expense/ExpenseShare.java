@@ -45,6 +45,10 @@ public class ExpenseShare {
     public ExpenseShare() {
     }
 
+    public ExpenseShare(Expense expense, User user, BigDecimal amountOwed) {
+        this(expense, user, amountOwed, null);
+    }
+
     public ExpenseShare(Expense expense, User user, BigDecimal amountOwed, BigDecimal shareValue) {
         this.expense = expense;
         this.user = user;
