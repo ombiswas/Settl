@@ -11,6 +11,10 @@ import {
 } from '../api/client'
 import { useAuthStore } from '../store/authStore'
 import { formatCurrency, formatDate } from '../lib/utils'
+import { CategoryBadge } from '../components/expenses/CategoryBadge'
+import { CreateExpenseModal } from '../components/expenses/CreateExpenseModal'
+import { BalanceGraph } from '../components/balances/BalanceGraph'
+import type { CreateExpenseRequest } from '../types/api'
 import {
   ArrowLeft,
   Users,
@@ -22,8 +26,10 @@ import {
   CheckCircle,
   Repeat,
   History,
-  ShieldCheck,
-  Zap,
+  Trash2,
+  Filter,
+  Search,
+  CheckCircle2,
 } from 'lucide-react'
 
 export const GroupDetailPage: React.FC = () => {
@@ -32,9 +38,14 @@ export const GroupDetailPage: React.FC = () => {
   const { user } = useAuthStore()
 
   const [activeTab, setActiveTab] = useState<'expenses' | 'balances' | 'settlements' | 'recurring' | 'activity'>('expenses')
+  const [showAddExpenseModal, setShowAddExpenseModal] = useState(false)
   const [showAddMember, setShowAddMember] = useState(false)
   const [memberEmail, setMemberEmail] = useState('')
   const [memberIsAdmin, setMemberIsAdmin] = useState(false)
+
+  // Search & Filter for expenses
+  const [expenseSearch, setExpenseSearch] = useState('')
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('')
 
   // Group Details
   const { data: group, isLoading: groupLoading } = useQuery({
@@ -55,7 +66,7 @@ export const GroupDetailPage: React.FC = () => {
       const res = await expensesApi.listGroup(groupId)
       return res.data.data
     },
-    enabled: !!groupId && activeTab === 'expenses',
+    enabled: !!groupId,
   })
 
   // Balances
@@ -69,7 +80,7 @@ export const GroupDetailPage: React.FC = () => {
     enabled: !!groupId && activeTab === 'balances',
   })
 
-  // Suggested Settlements (Simplified debt transactions)
+  // Suggested Settlements
   const { data: suggestedData } = useQuery({
     queryKey: ['suggestedSettlements', groupId],
     queryFn: async () => {
@@ -113,6 +124,34 @@ export const GroupDetailPage: React.FC = () => {
     enabled: !!groupId && activeTab === 'activity',
   })
 
+  // Create Expense Mutation
+  const createExpenseMutation = useMutation({
+    mutationFn: async (data: CreateExpenseRequest) => {
+      if (!groupId) return
+      await expensesApi.createGroup(groupId, data)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expenses', groupId] })
+      queryClient.invalidateQueries({ queryKey: ['balances', groupId] })
+      queryClient.invalidateQueries({ queryKey: ['suggestedSettlements', groupId] })
+      queryClient.invalidateQueries({ queryKey: ['activity', groupId] })
+    },
+  })
+
+  // Delete Expense Mutation
+  const deleteExpenseMutation = useMutation({
+    mutationFn: async (expenseId: string) => {
+      if (!groupId) return
+      await expensesApi.deleteGroup(groupId, expenseId)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expenses', groupId] })
+      queryClient.invalidateQueries({ queryKey: ['balances', groupId] })
+      queryClient.invalidateQueries({ queryKey: ['suggestedSettlements', groupId] })
+      queryClient.invalidateQueries({ queryKey: ['activity', groupId] })
+    },
+  })
+
   // Add Member Mutation
   const addMemberMutation = useMutation({
     mutationFn: async () => {
@@ -127,7 +166,7 @@ export const GroupDetailPage: React.FC = () => {
     },
   })
 
-  // Settle Up Mutation (1-click settlement confirmation)
+  // Record Settlement Mutation
   const recordSettlementMutation = useMutation({
     mutationFn: async ({ toUserId, amount }: { toUserId: string; amount: number }) => {
       if (!groupId) return
@@ -144,6 +183,15 @@ export const GroupDetailPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['settlements', groupId] })
       queryClient.invalidateQueries({ queryKey: ['activity', groupId] })
     },
+  })
+
+  // Filtered expenses
+  const filteredExpenses = expenses?.filter((exp) => {
+    const matchesSearch =
+      exp.description.toLowerCase().includes(expenseSearch.toLowerCase()) ||
+      exp.paidByName.toLowerCase().includes(expenseSearch.toLowerCase())
+    const matchesCat = selectedCategoryFilter ? exp.category === selectedCategoryFilter : true
+    return matchesSearch && matchesCat
   })
 
   if (groupLoading) {
@@ -165,9 +213,11 @@ export const GroupDetailPage: React.FC = () => {
     )
   }
 
+  const isUserAdmin = group.members?.some((m) => m.userId === user?.id && m.admin)
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-      {/* Back button & Group Header */}
+      {/* Header */}
       <div className="flex flex-col gap-4 border-b border-slate-200 pb-6 md:flex-row md:items-center md:justify-between">
         <div>
           <Link
@@ -190,13 +240,20 @@ export const GroupDetailPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
           <button
             onClick={() => setShowAddMember(true)}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 transition"
+            className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 transition cursor-pointer"
           >
             <UserPlus className="h-4 w-4 text-slate-500" />
             <span>Invite Member</span>
+          </button>
+          <button
+            onClick={() => setShowAddExpenseModal(true)}
+            className="inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 transition cursor-pointer"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Add Expense</span>
           </button>
         </div>
       </div>
@@ -216,7 +273,7 @@ export const GroupDetailPage: React.FC = () => {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as typeof activeTab)}
-              className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition ${
+              className={`flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition cursor-pointer ${
                 isActive
                   ? 'border-emerald-600 text-emerald-700'
                   : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'
@@ -234,117 +291,155 @@ export const GroupDetailPage: React.FC = () => {
         {/* EXPENSES TAB */}
         {activeTab === 'expenses' && (
           <div>
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-900">Group Expenses</h2>
+            {/* Search and Category Filter Bar */}
+            <div className="mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="absolute inset-y-0 left-3 my-auto h-4 w-4 text-slate-400" />
+                <input
+                  type="text"
+                  value={expenseSearch}
+                  onChange={(e) => setExpenseSearch(e.target.value)}
+                  placeholder="Search expenses or payer..."
+                  className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-xs focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-slate-400" />
+                <select
+                  value={selectedCategoryFilter}
+                  onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700"
+                >
+                  <option value="">All Categories</option>
+                  <option value="FOOD_AND_DINING">Food & Dining</option>
+                  <option value="TRANSPORTATION">Transportation</option>
+                  <option value="HOUSING_AND_UTILITIES">Housing & Utilities</option>
+                  <option value="ENTERTAINMENT">Entertainment</option>
+                  <option value="SHOPPING">Shopping</option>
+                  <option value="HEALTHCARE">Healthcare</option>
+                  <option value="TRAVEL">Travel</option>
+                  <option value="EDUCATION">Education</option>
+                  <option value="PERSONAL_CARE">Personal Care</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
             </div>
 
             {expensesLoading ? (
               <div className="py-12 text-center">
                 <Loader2 className="mx-auto h-6 w-6 animate-spin text-emerald-600" />
               </div>
-            ) : expenses && expenses.length > 0 ? (
-              <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white">
-                {expenses.map((expense) => (
-                  <div key={expense.id} className="flex items-center justify-between p-4 hover:bg-slate-50/50 transition">
-                    <div>
-                      <h4 className="font-semibold text-slate-900">{expense.description}</h4>
-                      <p className="text-xs text-slate-500">
-                        Paid by <span className="font-medium text-slate-700">{expense.paidByName}</span> •{' '}
-                        {formatDate(expense.createdAt)} • {expense.splitType} split
-                      </p>
+            ) : filteredExpenses && filteredExpenses.length > 0 ? (
+              <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-xs">
+                {filteredExpenses.map((expense) => {
+                  const canDelete = expense.paidById === user?.id || isUserAdmin
+                  return (
+                    <div
+                      key={expense.id}
+                      className="group flex flex-col sm:flex-row sm:items-center justify-between p-4 gap-3 hover:bg-slate-50/60 transition"
+                    >
+                      <div className="flex items-start gap-3.5">
+                        <div className="mt-0.5">
+                          <CategoryBadge category={expense.category} />
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-slate-900">{expense.description}</h4>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            Paid by <span className="font-medium text-slate-700">{expense.paidByName}</span> •{' '}
+                            {formatDate(expense.createdAt)} •{' '}
+                            <span className="font-medium text-slate-600 lowercase">{expense.splitType} split</span>
+                          </p>
+
+                          {/* Member debt chips */}
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {expense.shares?.map((s) => (
+                              <span
+                                key={s.userId}
+                                className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600"
+                              >
+                                {s.userDisplayName}: {formatCurrency(s.amountOwed, expense.currency)}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between sm:justify-end gap-4">
+                        <div className="text-left sm:text-right">
+                          <p className="text-base font-bold text-slate-900">
+                            {formatCurrency(expense.amount, expense.currency)}
+                          </p>
+                        </div>
+
+                        {canDelete && (
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Delete "${expense.description}"?`)) {
+                                deleteExpenseMutation.mutate(expense.id)
+                              }
+                            }}
+                            title="Delete Expense"
+                            className="rounded-lg p-2 text-slate-400 opacity-80 hover:bg-red-50 hover:text-red-600 transition cursor-pointer"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-bold text-slate-900">
-                        {formatCurrency(expense.amount, expense.currency)}
-                      </p>
-                      <span className="inline-block rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                        {expense.categoryDisplayName || expense.category}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             ) : (
-              <div className="rounded-2xl border-2 border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
-                No expenses logged in this group yet.
+              <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white p-12 text-center">
+                <Receipt className="mx-auto h-8 w-8 text-slate-400" />
+                <h3 className="mt-3 text-sm font-semibold text-slate-900">No expenses found</h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  {expenseSearch || selectedCategoryFilter
+                    ? 'No expenses matched your current filters.'
+                    : 'Start by adding your first group expense.'}
+                </p>
               </div>
             )}
           </div>
         )}
 
-        {/* BALANCES & SETTLE UP TAB */}
+        {/* BALANCES TAB */}
         {activeTab === 'balances' && (
           <div className="space-y-8">
-            {/* Suggested Debt Simplifications (Greedy algorithm results) */}
-            {suggestedData && suggestedData.suggestedTransactions?.length > 0 && (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5">
-                <div className="flex items-center gap-2 text-emerald-800">
-                  <Zap className="h-5 w-5 text-emerald-600" />
-                  <h3 className="text-base font-bold">Smart Debt Simplification</h3>
-                </div>
-                <p className="mt-1 text-xs text-emerald-700">
-                  Calculated using Settl's greedy max-heap debt simplifier algorithm (minimized to{' '}
-                  {suggestedData.transactionCount} transactions).
-                </p>
-
-                <div className="mt-4 space-y-2.5">
-                  {suggestedData.suggestedTransactions.map((tx, idx) => {
-                    const isCurrentUserPayer = user?.id === tx.fromUserId
-                    return (
-                      <div
-                        key={idx}
-                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-emerald-200/80 bg-white p-3.5 shadow-xs"
-                      >
-                        <div className="text-sm">
-                          <span className="font-bold text-slate-900">{tx.fromUserName}</span> owes{' '}
-                          <span className="font-bold text-slate-900">{tx.toUserName}</span>{' '}
-                          <span className="font-bold text-emerald-700">
-                            {formatCurrency(tx.amount, tx.currency)}
-                          </span>
-                        </div>
-
-                        {isCurrentUserPayer && (
-                          <button
-                            onClick={() =>
-                              recordSettlementMutation.mutate({
-                                toUserId: tx.toUserId,
-                                amount: tx.amount,
-                              })
-                            }
-                            disabled={recordSettlementMutation.isPending}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition"
-                          >
-                            <CheckCircle className="h-3.5 w-3.5" />
-                            <span>Confirm Payment</span>
-                          </button>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
+            {/* Visual Debt Graph */}
+            {balancesData && suggestedData && (
+              <BalanceGraph
+                balances={balancesData.balances}
+                suggestedSettlements={suggestedData.suggestedTransactions}
+                currency={group.defaultCurrency}
+              />
             )}
 
-            {/* Balances list */}
+            {/* Member Net Balances */}
             {balancesData && (
               <div>
-                <h3 className="text-base font-bold text-slate-900">Member Net Balances</h3>
-                <div className="mt-3 divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white">
+                <h3 className="text-base font-bold text-slate-900">Member Net Positions</h3>
+                <p className="text-xs text-slate-500 mb-3">
+                  Summary of amounts paid vs share owed per group participant.
+                </p>
+
+                <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-xs">
                   {balancesData.balances.map((b) => (
                     <div key={b.userId} className="flex items-center justify-between p-4">
                       <div>
                         <p className="font-semibold text-slate-900">{b.displayName}</p>
                         <p className="text-xs text-slate-500">
-                          Paid {formatCurrency(b.totalPaid, balancesData.currency)} • Share{' '}
+                          Paid {formatCurrency(b.totalPaid, balancesData.currency)} • Owes share of{' '}
                           {formatCurrency(b.totalShare, balancesData.currency)}
                         </p>
                       </div>
                       <div className="text-right">
                         <span
-                          className={`font-bold ${
-                            b.netBalance > 0
+                          className={`text-sm font-bold ${
+                            b.netBalance > 0.001
                               ? 'text-emerald-600'
-                              : b.netBalance < 0
+                              : b.netBalance < -0.001
                               ? 'text-red-600'
                               : 'text-slate-500'
                           }`}
@@ -352,9 +447,21 @@ export const GroupDetailPage: React.FC = () => {
                           {b.netBalance > 0 ? '+' : ''}
                           {formatCurrency(b.netBalance, balancesData.currency)}
                         </span>
-                        <p className="text-[11px] font-semibold text-slate-400 uppercase">
-                          {b.status}
-                        </p>
+                        <span
+                          className={`ml-2 inline-block rounded-md px-2 py-0.5 text-[10px] font-bold ${
+                            b.status === 'IS_OWED'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : b.status === 'OWES'
+                              ? 'bg-red-50 text-red-700'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {b.status === 'IS_OWED'
+                            ? 'Gets Back'
+                            : b.status === 'OWES'
+                            ? 'Owes'
+                            : 'Settled'}
+                        </span>
                       </div>
                     </div>
                   ))}
@@ -369,16 +476,16 @@ export const GroupDetailPage: React.FC = () => {
           <div>
             <h3 className="text-base font-bold text-slate-900">Settlement Ledger</h3>
             <p className="text-xs text-slate-500 mb-4">
-              Historical record of all debt repayments recorded in this group.
+              Historical log of debt repayments recorded between group members.
             </p>
 
             {settlements && settlements.length > 0 ? (
-              <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white">
+              <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-xs">
                 {settlements.map((s) => (
                   <div key={s.id} className="flex items-center justify-between p-4">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                        <CheckCircle className="h-4 w-4" />
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                        <CheckCircle className="h-5 w-5" />
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-slate-900">
@@ -394,8 +501,8 @@ export const GroupDetailPage: React.FC = () => {
                 ))}
               </div>
             ) : (
-              <div className="rounded-2xl border-2 border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
-                No settlements recorded yet.
+              <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white p-12 text-center text-sm text-slate-500">
+                No repayments have been recorded yet.
               </div>
             )}
           </div>
@@ -406,11 +513,11 @@ export const GroupDetailPage: React.FC = () => {
           <div>
             <h3 className="text-base font-bold text-slate-900">Recurring Expenses</h3>
             <p className="text-xs text-slate-500 mb-4">
-              Automated recurring expense templates (rent, subscriptions, utilities).
+              Automated templates that trigger on a scheduled interval.
             </p>
 
             {recurringList && recurringList.length > 0 ? (
-              <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white">
+              <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-xs">
                 {recurringList.map((r) => (
                   <div key={r.id} className="flex items-center justify-between p-4">
                     <div>
@@ -431,7 +538,7 @@ export const GroupDetailPage: React.FC = () => {
                 ))}
               </div>
             ) : (
-              <div className="rounded-2xl border-2 border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
+              <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white p-12 text-center text-sm text-slate-500">
                 No recurring expenses configured.
               </div>
             )}
@@ -447,7 +554,7 @@ export const GroupDetailPage: React.FC = () => {
             </p>
 
             {activityData && activityData.content?.length > 0 ? (
-              <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white">
+              <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-xs">
                 {activityData.content.map((act) => (
                   <div key={act.id} className="p-4">
                     <div className="flex items-center justify-between text-xs text-slate-500">
@@ -461,13 +568,25 @@ export const GroupDetailPage: React.FC = () => {
                 ))}
               </div>
             ) : (
-              <div className="rounded-2xl border-2 border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
+              <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white p-12 text-center text-sm text-slate-500">
                 No activity recorded yet.
               </div>
             )}
           </div>
         )}
       </div>
+
+      {/* Add Expense Modal */}
+      <CreateExpenseModal
+        isOpen={showAddExpenseModal}
+        onClose={() => setShowAddExpenseModal(false)}
+        onSubmit={async (data) => {
+          await createExpenseMutation.mutateAsync(data)
+        }}
+        members={group.members || []}
+        defaultCurrency={group.defaultCurrency}
+        currentUserId={user?.id}
+      />
 
       {/* Invite Member Modal */}
       {showAddMember && (
