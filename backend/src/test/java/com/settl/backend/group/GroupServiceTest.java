@@ -52,6 +52,9 @@ class GroupServiceTest {
     @Mock
     private SettlementRepository settlementRepository;
 
+    @Mock
+    private com.settl.backend.audit.AuditService auditService;
+
     @InjectMocks
     private GroupService groupService;
 

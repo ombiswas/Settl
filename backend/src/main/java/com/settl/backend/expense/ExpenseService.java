@@ -1,5 +1,7 @@
 package com.settl.backend.expense;
 
+import com.settl.backend.audit.AuditAction;
+import com.settl.backend.audit.AuditService;
 import com.settl.backend.common.ApiException;
 import com.settl.backend.expense.dto.CreateExpenseRequest;
 import com.settl.backend.expense.dto.ExpenseResponse;
@@ -18,9 +20,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.Currency;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,19 +36,22 @@ public class ExpenseService {
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
     private final SplitCalculator splitCalculator;
+    private final AuditService auditService;
 
     public ExpenseService(
             ExpenseRepository expenseRepository,
             GroupRepository groupRepository,
             GroupMemberRepository groupMemberRepository,
             UserRepository userRepository,
-            SplitCalculator splitCalculator
+            SplitCalculator splitCalculator,
+            AuditService auditService
     ) {
         this.expenseRepository = expenseRepository;
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.userRepository = userRepository;
         this.splitCalculator = splitCalculator;
+        this.auditService = auditService;
     }
 
     @Transactional
@@ -111,6 +115,18 @@ public class ExpenseService {
         }
 
         Expense savedExpense = expenseRepository.save(expense);
+
+        // Audit log
+        Map<String, Object> details = new HashMap<>();
+        details.put("expenseId", savedExpense.getId().toString());
+        details.put("description", savedExpense.getDescription());
+        details.put("amount", savedExpense.getAmount().toString());
+        details.put("currency", savedExpense.getCurrency());
+        details.put("category", savedExpense.getCategory().name());
+        details.put("splitType", savedExpense.getSplitType().name());
+        details.put("paidBy", payer.getDisplayName());
+        auditService.logActivity(group, payer, AuditAction.EXPENSE_CREATED, details);
+
         return mapToExpenseResponse(savedExpense);
     }
 
@@ -193,11 +209,24 @@ public class ExpenseService {
         }
 
         Expense updatedExpense = expenseRepository.save(expense);
+
+        // Audit log
+        Map<String, Object> details = new HashMap<>();
+        details.put("expenseId", updatedExpense.getId().toString());
+        details.put("description", updatedExpense.getDescription());
+        details.put("amount", updatedExpense.getAmount().toString());
+        details.put("currency", updatedExpense.getCurrency());
+        details.put("editedBy", callerMembership.getUser().getDisplayName());
+        auditService.logActivity(group, callerMembership.getUser(), AuditAction.EXPENSE_UPDATED, details);
+
         return mapToExpenseResponse(updatedExpense);
     }
 
     @Transactional
     public void deleteGroupExpense(UUID groupId, UUID expenseId, UUID callerId) {
+        Group group = groupRepository.findById(groupId)
+                .orElseThrow(() -> ApiException.notFound("Group not found", "GROUP_NOT_FOUND"));
+
         GroupMember callerMembership = groupMemberRepository.findByGroupIdAndUserId(groupId, callerId)
                 .orElseThrow(() -> ApiException.forbidden("You must be a member of this group to delete expenses", "NOT_A_GROUP_MEMBER"));
 
@@ -209,6 +238,14 @@ public class ExpenseService {
         if (!isCreatorOrPayer && !isAdmin) {
             throw ApiException.forbidden("Only the creator of this expense or a group admin can delete it", "INSUFFICIENT_PERMISSIONS");
         }
+
+        // Audit log before delete
+        Map<String, Object> details = new HashMap<>();
+        details.put("expenseId", expense.getId().toString());
+        details.put("description", expense.getDescription());
+        details.put("amount", expense.getAmount().toString());
+        details.put("deletedBy", callerMembership.getUser().getDisplayName());
+        auditService.logActivity(group, callerMembership.getUser(), AuditAction.EXPENSE_DELETED, details);
 
         expenseRepository.delete(expense);
     }

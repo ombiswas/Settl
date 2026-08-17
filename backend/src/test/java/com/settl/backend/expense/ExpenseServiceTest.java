@@ -49,6 +49,9 @@ class ExpenseServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private com.settl.backend.audit.AuditService auditService;
+
     private ExpenseService expenseService;
 
     private Group testGroup;
@@ -76,7 +79,8 @@ class ExpenseServiceTest {
                 groupRepository,
                 groupMemberRepository,
                 userRepository,
-                splitCalculator
+                splitCalculator,
+                auditService
         );
 
         creatorId = UUID.randomUUID();
@@ -158,6 +162,7 @@ class ExpenseServiceTest {
 
     @Test
     void nonAdminOrNonCreatorCannotDeleteExpense() {
+        when(groupRepository.findById(groupId)).thenReturn(Optional.of(testGroup));
         GroupMember memberMembership = new GroupMember(testGroup, memberUser, false); // Not admin
         when(groupMemberRepository.findByGroupIdAndUserId(groupId, memberId))
                 .thenReturn(Optional.of(memberMembership));
@@ -173,6 +178,7 @@ class ExpenseServiceTest {
 
     @Test
     void adminCanDeleteAnyGroupExpense() {
+        when(groupRepository.findById(groupId)).thenReturn(Optional.of(testGroup));
         GroupMember adminMembership = new GroupMember(testGroup, creatorUser, true); // Admin
         when(groupMemberRepository.findByGroupIdAndUserId(groupId, creatorId))
                 .thenReturn(Optional.of(adminMembership));

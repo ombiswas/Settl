@@ -1,5 +1,7 @@
 package com.settl.backend.group;
 
+import com.settl.backend.audit.AuditAction;
+import com.settl.backend.audit.AuditService;
 import com.settl.backend.common.ApiException;
 import com.settl.backend.expense.ExpenseRepository;
 import com.settl.backend.expense.ExpenseShareRepository;
@@ -18,7 +20,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.Currency;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -33,6 +37,7 @@ public class GroupService {
     private final ExpenseRepository expenseRepository;
     private final ExpenseShareRepository expenseShareRepository;
     private final SettlementRepository settlementRepository;
+    private final AuditService auditService;
 
     public GroupService(
             GroupRepository groupRepository,
@@ -40,7 +45,8 @@ public class GroupService {
             UserRepository userRepository,
             ExpenseRepository expenseRepository,
             ExpenseShareRepository expenseShareRepository,
-            SettlementRepository settlementRepository
+            SettlementRepository settlementRepository,
+            AuditService auditService
     ) {
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
@@ -48,6 +54,7 @@ public class GroupService {
         this.expenseRepository = expenseRepository;
         this.expenseShareRepository = expenseShareRepository;
         this.settlementRepository = settlementRepository;
+        this.auditService = auditService;
     }
 
     @Transactional
@@ -64,6 +71,11 @@ public class GroupService {
         groupMemberRepository.save(adminMember);
 
         log.info("Group '{}' (id={}) created by user id={}", savedGroup.getName(), savedGroup.getId(), currentUserId);
+
+        Map<String, Object> details = new HashMap<>();
+        details.put("groupName", savedGroup.getName());
+        details.put("currency", savedGroup.getDefaultCurrency());
+        auditService.logActivity(savedGroup, caller, AuditAction.GROUP_CREATED, details);
 
         GroupMemberDto memberDto = new GroupMemberDto(
                 caller.getId(),
@@ -131,6 +143,13 @@ public class GroupService {
 
             log.info("User id={} added to group id={} by caller id={}", targetUser.getId(), groupId, currentUserId);
 
+            Map<String, Object> details = new HashMap<>();
+            details.put("addedUserId", targetUser.getId().toString());
+            details.put("addedUserEmail", targetUser.getEmail());
+            details.put("addedUserName", targetUser.getDisplayName());
+            details.put("isAdmin", makeAdmin);
+            auditService.logActivity(group, callerMember.getUser(), AuditAction.MEMBER_JOINED, details);
+
             return new AddMemberResponse(
                     targetUser.getId(),
                     targetUser.getEmail(),
@@ -190,6 +209,12 @@ public class GroupService {
                 );
             }
         }
+
+        Map<String, Object> details = new HashMap<>();
+        details.put("removedUserId", targetMember.getUser().getId().toString());
+        details.put("removedUserName", targetMember.getUser().getDisplayName());
+        details.put("removedBy", callerMember.getUser().getDisplayName());
+        auditService.logActivity(group, callerMember.getUser(), AuditAction.MEMBER_REMOVED, details);
 
         groupMemberRepository.deleteByGroupIdAndUserId(groupId, targetUserId);
         log.info("Member id={} removed from group id={} by caller id={}", targetUserId, groupId, currentUserId);
