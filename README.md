@@ -107,7 +107,7 @@ Settl implements a greedy max-heap matching algorithm that eliminates circular d
 - **Time Complexity**: $O(N \log N)$ — constructing heaps in $O(N)$ and executing at most $N-1$ extract/insert operations in $O(\log N)$ time.
 - **Space Complexity**: $O(N)$ auxiliary memory for debtor and creditor priority queues.
 - **Zero-Sum Conservation**: Total money settled is invariant; every member's balance reaches exactly $0.00$.
-- **Formal In-Depth Documentation**: See [docs/algorithm-explainer.md](file:///C:/Users/ombiswas/Documents/Projects/Settl/docs/algorithm-explainer.md) for full mathematical proof and step-by-step trace.
+- **Formal In-Depth Documentation**: See [DebtSimplifier.java](file:///backend/src/main/java/com/settl/backend/settlement/simplifier/DebtSimplifier.java) for implementation details, complexity analysis, and mathematical guarantees.
 
 ---
 
@@ -144,8 +144,8 @@ Settl allows users to log expenses in any currency (e.g., EUR, GBP, JPY) while s
 
 ### 1. Start Infrastructure (Postgres + Redis)
 ```bash
-# Start PostgreSQL (port 5435) and Redis (port 6379)
-docker compose up -d
+# Start PostgreSQL (port 5432) and Redis (port 6379)
+docker compose up -d postgres redis
 ```
 
 ### 2. Run Backend (Spring Boot)
@@ -179,7 +179,7 @@ npm run dev
 ### Option A: One-Command Production Stack (Docker Compose)
 ```bash
 # Builds multi-stage JRE backend and Nginx static frontend
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose up -d --build
 ```
 
 ### Option B: Cloud Deployment (Railway / Render + Vercel)
