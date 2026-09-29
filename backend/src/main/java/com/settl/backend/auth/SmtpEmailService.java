@@ -20,7 +20,7 @@ public class SmtpEmailService implements EmailService {
     @Value("${spring.mail.username:}")
     private String mailUsername;
 
-    @Value("${app.mail.from:noreply@settl.app}")
+    @Value("${app.mail.from:${MAIL_FROM:}}")
     private String fromEmail;
 
     public SmtpEmailService(ObjectProvider<JavaMailSender> mailSenderProvider) {
@@ -39,7 +39,7 @@ public class SmtpEmailService implements EmailService {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
-            String sender = (fromEmail != null && !fromEmail.isBlank()) ? fromEmail.trim() : "noreply@settl.app";
+            String sender = (fromEmail != null && !fromEmail.isBlank()) ? fromEmail.trim() : mailUsername;
             helper.setFrom(sender);
             helper.setTo(toEmail);
             helper.setSubject("Verify your email address — Settl");
@@ -107,5 +107,88 @@ public class SmtpEmailService implements EmailService {
             </body>
             </html>
             """.formatted(displayName, verificationUrl, verificationUrl, verificationUrl);
+    }
+
+    @Override
+    public void sendGroupInvitationEmail(String toEmail, String inviterName, String groupName, String actionUrl, boolean isNewUser) {
+        String subject = isNewUser
+                ? inviterName + " invited you to join " + groupName + " on Settl"
+                : "You were added to " + groupName + " by " + inviterName;
+
+        if (mailSender == null || mailUsername == null || mailUsername.isBlank()) {
+            log.info("📧 [Dev Mode] Group Invitation email for {}:\n➡️  Subject: {}\n➡️  Action Link: {}\n", toEmail, subject, actionUrl);
+            return;
+        }
+
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+            String sender = (fromEmail != null && !fromEmail.isBlank()) ? fromEmail.trim() : mailUsername;
+            helper.setFrom(sender);
+            helper.setTo(toEmail);
+            helper.setSubject(subject);
+
+            String htmlBody = buildGroupInvitationEmailHtml(inviterName, groupName, actionUrl, isNewUser);
+            helper.setText(htmlBody, true);
+
+            mailSender.send(message);
+            log.info("Group invitation email successfully dispatched to {}", toEmail);
+        } catch (MessagingException | RuntimeException ex) {
+            log.error("Failed to send group invitation email to {}. Link: {}", toEmail, actionUrl, ex);
+        }
+    }
+
+    private String buildGroupInvitationEmailHtml(String inviterName, String groupName, String actionUrl, boolean isNewUser) {
+        String actionVerb = isNewUser ? "invited" : "added";
+        String buttonText = isNewUser ? "Join Group & Sign Up" : "View Group on Settl";
+        return """
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Group Invitation - Settl</title>
+              <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; color: #0f172a; margin: 0; padding: 0; }
+                .container { max-width: 580px; margin: 40px auto; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+                .header { background-color: #0f172a; color: #ffffff; padding: 32px 40px; text-align: center; }
+                .header h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.03em; }
+                .header p { margin: 6px 0 0 0; font-size: 14px; color: #94a3b8; }
+                .content { padding: 40px; }
+                .greeting { font-size: 18px; font-weight: 600; margin-bottom: 12px; color: #0f172a; }
+                .text { font-size: 15px; line-height: 1.6; color: #475569; margin-bottom: 24px; }
+                .btn-container { text-align: center; margin: 32px 0; }
+                .btn { display: inline-block; background-color: #059669; color: #ffffff !important; padding: 14px 32px; font-size: 15px; font-weight: 600; text-decoration: none; border-radius: 8px; }
+                .alt-link { font-size: 13px; color: #64748b; word-break: break-all; margin-top: 20px; }
+                .footer { background-color: #f8fafc; padding: 24px 40px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="header">
+                  <h1>Settl</h1>
+                  <p>Smart Expense Splitting & Debt Simplification</p>
+                </div>
+                <div class="content">
+                  <div class="greeting">Hello!</div>
+                  <div class="text">
+                    <strong>%s</strong> has %s you to the expense group <strong>"%s"</strong> on Settl.
+                  </div>
+                  <div class="btn-container">
+                    <a href="%s" class="btn" target="_blank">%s</a>
+                  </div>
+                  <div class="alt-link">
+                    Or open this link directly in your browser:<br>
+                    <a href="%s" style="color: #059669;">%s</a>
+                  </div>
+                </div>
+                <div class="footer">
+                  &copy; Settl App. All rights reserved.
+                </div>
+              </div>
+            </body>
+            </html>
+            """.formatted(inviterName, actionVerb, groupName, actionUrl, buttonText, actionUrl, actionUrl);
     }
 }

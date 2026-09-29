@@ -38,6 +38,10 @@ public class GroupService {
     private final ExpenseShareRepository expenseShareRepository;
     private final SettlementRepository settlementRepository;
     private final AuditService auditService;
+    private final com.settl.backend.auth.EmailService emailService;
+
+    @org.springframework.beans.factory.annotation.Value("${app.cors.allowed-origins:http://localhost:5173}")
+    private String appBaseUrl = "http://localhost:5173";
 
     public GroupService(
             GroupRepository groupRepository,
@@ -46,7 +50,8 @@ public class GroupService {
             ExpenseRepository expenseRepository,
             ExpenseShareRepository expenseShareRepository,
             SettlementRepository settlementRepository,
-            AuditService auditService
+            AuditService auditService,
+            com.settl.backend.auth.EmailService emailService
     ) {
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
@@ -55,6 +60,7 @@ public class GroupService {
         this.expenseShareRepository = expenseShareRepository;
         this.settlementRepository = settlementRepository;
         this.auditService = auditService;
+        this.emailService = emailService;
     }
 
     @Transactional
@@ -131,6 +137,9 @@ public class GroupService {
 
         Optional<User> userOpt = userRepository.findByEmail(targetEmail);
 
+        String baseUrl = appBaseUrl.split(",")[0].trim();
+        String inviterName = callerMember.getUser().getDisplayName();
+
         if (userOpt.isPresent()) {
             User targetUser = userOpt.get();
 
@@ -150,16 +159,22 @@ public class GroupService {
             details.put("isAdmin", makeAdmin);
             auditService.logActivity(group, callerMember.getUser(), AuditAction.MEMBER_JOINED, details);
 
+            String groupUrl = baseUrl + "/groups/" + groupId;
+            emailService.sendGroupInvitationEmail(targetUser.getEmail(), inviterName, group.getName(), groupUrl, false);
+
             return new AddMemberResponse(
                     targetUser.getId(),
                     targetUser.getEmail(),
                     targetUser.getDisplayName(),
                     true,
                     makeAdmin,
-                    "Member added successfully"
+                    "Member added successfully and notification email dispatched"
             );
         } else {
             log.info("Invitation dispatched for non-registered email {} to group id={}", targetEmail, groupId);
+            String registerUrl = baseUrl + "/register";
+            emailService.sendGroupInvitationEmail(targetEmail, inviterName, group.getName(), registerUrl, true);
+
             return new AddMemberResponse(
                     null,
                     targetEmail,

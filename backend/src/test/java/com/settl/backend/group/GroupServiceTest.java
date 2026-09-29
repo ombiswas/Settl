@@ -55,6 +55,9 @@ class GroupServiceTest {
     @Mock
     private com.settl.backend.audit.AuditService auditService;
 
+    @Mock
+    private com.settl.backend.auth.EmailService emailService;
+
     @InjectMocks
     private GroupService groupService;
 
@@ -148,6 +151,7 @@ class GroupServiceTest {
         assertThat(response.isExistingUser()).isTrue();
         assertThat(response.userId()).isEqualTo(user2.getId());
         verify(groupMemberRepository).save(any(GroupMember.class));
+        verify(emailService).sendGroupInvitationEmail(eq("bob@example.com"), eq("Alice"), eq("Trip to Paris"), any(), eq(false));
     }
 
     @Test
@@ -165,6 +169,7 @@ class GroupServiceTest {
         assertThat(response.email()).isEqualTo("newuser@example.com");
         assertThat(response.message()).contains("Invitation created");
         verify(groupMemberRepository, never()).save(any());
+        verify(emailService).sendGroupInvitationEmail(eq("newuser@example.com"), eq("Alice"), eq("Trip to Paris"), any(), eq(true));
     }
 
     @Test
