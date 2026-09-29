@@ -6,10 +6,10 @@ services:
     environment:
       POSTGRES_DB: ${DB_NAME:-expense_splitter}
       POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-settl_secure_password_123}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
       TZ: UTC
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "${DB_PORT:-5435}:5432"
     volumes:
       - postgres_prod_data:/var/lib/postgresql/data
     healthcheck:
@@ -48,7 +48,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       DB_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-expense_splitter}?options=-c%20timezone=UTC
       DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-settl_secure_password_123}
+      DB_PASSWORD: ${DB_PASSWORD:-changeme}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
