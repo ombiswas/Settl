@@ -21,4 +21,8 @@ public interface RecurringExpenseRepository extends JpaRepository<RecurringExpen
 
     @Query("SELECT r FROM RecurringExpense r WHERE r.id = :id AND r.group.id = :groupId")
     Optional<RecurringExpense> findByIdAndGroupId(@Param("id") UUID id, @Param("groupId") UUID groupId);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("DELETE FROM RecurringExpense r WHERE r.paidBy.id = :userId")
+    void deleteByPaidById(@Param("userId") UUID userId);
 }

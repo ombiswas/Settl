@@ -140,6 +140,11 @@ export const authApi = {
     apiClient.post<ApiResponse<string>>('/auth/resend-verification', { email }),
 }
 
+export const usersApi = {
+  deleteAccount: (data: { password: string; confirmation: string }) =>
+    apiClient.delete<ApiResponse<void>>('/users/me', { data }),
+}
+
 export const groupsApi = {
   list: () =>
     apiClient.get<ApiResponse<Group[]>>('/groups'),

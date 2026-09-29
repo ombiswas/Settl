@@ -10,13 +10,16 @@ import {
   Menu,
   X,
   CreditCard,
+  Settings,
 } from 'lucide-react'
+import { AccountSettingsModal } from '../user/AccountSettingsModal'
 
 export const Navbar: React.FC = () => {
   const { user, isAuthenticated, clearAuth } = useAuthStore()
   const navigate = useNavigate()
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
 
   const handleLogout = async () => {
     try {
@@ -77,13 +80,18 @@ export const Navbar: React.FC = () => {
         </div>
 
         {/* User Profile & Actions */}
-        <div className="hidden md:flex items-center gap-3">
-          <div className="flex items-center gap-2.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700">
-            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 font-semibold text-emerald-800 uppercase">
+        <div className="hidden md:flex items-center gap-2.5">
+          <button
+            onClick={() => setShowSettingsModal(true)}
+            title="Account Settings & Profile"
+            className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 pl-1.5 pr-2.5 py-1 text-xs text-slate-700 transition hover:bg-slate-100 hover:border-slate-300 shadow-2xs"
+          >
+            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 font-semibold text-emerald-800 uppercase text-[11px]">
               {user?.displayName?.charAt(0) || 'U'}
             </div>
-            <span className="font-medium">{user?.displayName}</span>
-          </div>
+            <span className="font-medium max-w-[130px] truncate">{user?.displayName}</span>
+            <Settings className="h-3.5 w-3.5 text-slate-400 hover:text-slate-600 transition" />
+          </button>
 
           <button
             onClick={handleLogout}
@@ -142,9 +150,20 @@ export const Navbar: React.FC = () => {
             <button
               onClick={() => {
                 setMobileMenuOpen(false)
+                setShowSettingsModal(true)
+              }}
+              className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              <Settings className="h-4 w-4 text-slate-500" />
+              Account Settings
+            </button>
+
+            <button
+              onClick={() => {
+                setMobileMenuOpen(false)
                 handleLogout()
               }}
-              className="mt-2 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50"
+              className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50"
             >
               <LogOut className="h-4 w-4" />
               Sign Out
@@ -152,6 +171,12 @@ export const Navbar: React.FC = () => {
           </nav>
         </div>
       )}
+
+      {/* Account Settings Modal */}
+      <AccountSettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+      />
     </header>
   )
 }

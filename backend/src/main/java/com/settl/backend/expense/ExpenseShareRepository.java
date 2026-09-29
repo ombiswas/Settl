@@ -13,4 +13,7 @@ public interface ExpenseShareRepository extends JpaRepository<ExpenseShare, UUID
 
     @Query("SELECT COALESCE(SUM(es.amountOwed), 0) FROM ExpenseShare es WHERE es.expense.group.id = :groupId AND es.user.id = :userId")
     BigDecimal sumOwedByUserIdInGroup(@Param("groupId") UUID groupId, @Param("userId") UUID userId);
+
+    @Query("SELECT COUNT(es) FROM ExpenseShare es WHERE es.expense.group IS NOT NULL AND es.user.id = :userId")
+    long countGroupExpenseSharesByUserId(@Param("userId") UUID userId);
 }

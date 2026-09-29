@@ -46,4 +46,11 @@ public interface ExpenseRepository extends JpaRepository<Expense, UUID> {
 
     @Query("SELECT e FROM Expense e WHERE e.id = :expenseId AND e.group IS NULL AND e.paidBy.id = :userId")
     Optional<Expense> findPersonalExpenseByIdAndUserId(@Param("expenseId") UUID expenseId, @Param("userId") UUID userId);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("DELETE FROM Expense e WHERE e.group IS NULL AND e.paidBy.id = :userId")
+    void deletePersonalExpensesByUserId(@Param("userId") UUID userId);
+
+    @Query("SELECT COUNT(e) FROM Expense e WHERE e.group IS NOT NULL AND e.paidBy.id = :userId")
+    long countGroupExpensesPaidByUserId(@Param("userId") UUID userId);
 }

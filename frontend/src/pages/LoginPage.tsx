@@ -24,6 +24,9 @@ export const LoginPage: React.FC = () => {
   const location = useLocation()
   const { setAuth } = useAuthStore()
 
+  const searchParams = new URLSearchParams(location.search)
+  const isDeleted = searchParams.get('deleted') === 'true'
+
   const from = location.state?.from?.pathname || '/groups'
 
   const {
@@ -87,6 +90,13 @@ export const LoginPage: React.FC = () => {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          {isDeleted && (
+            <div className="mb-5 flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50/80 p-3.5 text-xs font-medium text-emerald-900">
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+              <span>Your account and all associated personal data have been permanently deleted.</span>
+            </div>
+          )}
+
           {serverError && (
             <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
               <div className="flex items-start gap-2.5">

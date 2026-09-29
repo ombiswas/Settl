@@ -20,4 +20,7 @@ public interface SettlementRepository extends JpaRepository<Settlement, UUID> {
 
     @Query("SELECT s FROM Settlement s WHERE s.group.id = :groupId ORDER BY s.settledAt DESC")
     List<Settlement> findByGroupIdOrderBySettledAtDesc(@Param("groupId") UUID groupId);
+
+    @Query("SELECT COUNT(s) FROM Settlement s WHERE s.fromUser.id = :userId OR s.toUser.id = :userId")
+    long countSettlementsByUserId(@Param("userId") UUID userId);
 }
