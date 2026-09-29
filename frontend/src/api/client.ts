@@ -22,8 +22,10 @@ import type {
   AddMemberRequest,
 } from '../types/api'
 
+const apiBase = ((import.meta as { env?: { VITE_API_BASE_URL?: string } }).env?.VITE_API_BASE_URL)?.replace(/\/+$/, '') || '/api'
+
 export const apiClient = axios.create({
-  baseURL: '/api',
+  baseURL: apiBase,
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
@@ -87,7 +89,7 @@ apiClient.interceptors.response.use(
 
       try {
         const { data } = await axios.post<ApiResponse<AuthResponse>>(
-          '/api/auth/refresh',
+          `${apiBase}/auth/refresh`,
           {},
           { withCredentials: true }
         )

@@ -17,7 +17,10 @@ public class SmtpEmailService implements EmailService {
 
     private final JavaMailSender mailSender;
 
-    @Value("${spring.mail.username:noreply@settl.app}")
+    @Value("${spring.mail.username:}")
+    private String mailUsername;
+
+    @Value("${app.mail.from:noreply@settl.app}")
     private String fromEmail;
 
     public SmtpEmailService(ObjectProvider<JavaMailSender> mailSenderProvider) {
@@ -26,8 +29,9 @@ public class SmtpEmailService implements EmailService {
 
     @Override
     public void sendVerificationEmail(String toEmail, String displayName, String verificationUrl) {
-        if (mailSender == null) {
-            log.warn("JavaMailSender is not configured. Verification link for {} ({}): {}", displayName, toEmail, verificationUrl);
+        // In local development without configured SMTP credentials, log the direct verification link
+        if (mailSender == null || mailUsername == null || mailUsername.isBlank()) {
+            log.info("📧 [Dev Mode] Verification link for {} ({}):\n➡️  {}\n", displayName, toEmail, verificationUrl);
             return;
         }
 
@@ -35,7 +39,8 @@ public class SmtpEmailService implements EmailService {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
-            helper.setFrom(fromEmail);
+            String sender = (fromEmail != null && !fromEmail.isBlank()) ? fromEmail.trim() : "noreply@settl.app";
+            helper.setFrom(sender);
             helper.setTo(toEmail);
             helper.setSubject("Verify your email address — Settl");
 
