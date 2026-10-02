@@ -2,6 +2,7 @@ package com.settl.backend.expense;
 
 import com.settl.backend.auth.CustomUserPrincipal;
 import com.settl.backend.common.ApiResponse;
+import com.settl.backend.common.PageResponse;
 import com.settl.backend.expense.dto.CreateExpenseRequest;
 import com.settl.backend.expense.dto.ExpenseResponse;
 import com.settl.backend.expense.dto.UpdateExpenseRequest;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -49,12 +51,14 @@ public class ExpenseController {
     }
 
     @GetMapping
-    @Operation(summary = "List group expenses", description = "Retrieves all expenses recorded in the group (member-only)")
-    public ResponseEntity<ApiResponse<List<ExpenseResponse>>> getGroupExpenses(
+    @Operation(summary = "List group expenses", description = "Retrieves paginated expenses recorded in the group (member-only)")
+    public ResponseEntity<ApiResponse<PageResponse<ExpenseResponse>>> getGroupExpenses(
             @PathVariable("groupId") UUID groupId,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "20") int size,
             @AuthenticationPrincipal CustomUserPrincipal principal
     ) {
-        List<ExpenseResponse> expenses = expenseService.getGroupExpenses(groupId, principal.id());
+        PageResponse<ExpenseResponse> expenses = expenseService.getGroupExpenses(groupId, principal.id(), page, size);
         return ResponseEntity.ok(ApiResponse.success(expenses, "Group expenses retrieved successfully"));
     }
 

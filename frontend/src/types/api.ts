@@ -301,6 +301,15 @@ export interface AuditLogEntry {
   createdAt: string
 }
 
+export interface PageResponse<T> {
+  content: T[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+  number?: number
+}
+
 export interface Page<T> {
   content: T[]
   totalElements: number

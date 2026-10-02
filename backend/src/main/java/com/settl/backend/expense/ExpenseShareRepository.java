@@ -22,4 +22,7 @@ public interface ExpenseShareRepository extends JpaRepository<ExpenseShare, UUID
 
     @Query("SELECT COUNT(es) FROM ExpenseShare es WHERE es.expense.group IS NOT NULL AND es.user.id = :userId")
     long countGroupExpenseSharesByUserId(@Param("userId") UUID userId);
+
+    @Query("SELECT es FROM ExpenseShare es JOIN FETCH es.user WHERE es.expense.id IN :expenseIds")
+    List<ExpenseShare> findByExpenseIdIn(@Param("expenseIds") List<UUID> expenseIds);
 }

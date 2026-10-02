@@ -3,6 +3,8 @@ package com.settl.backend.settlement;
 import com.settl.backend.audit.AuditAction;
 import com.settl.backend.audit.AuditService;
 import com.settl.backend.common.ApiException;
+import com.settl.backend.common.CurrencyValidator;
+import com.settl.backend.common.PageResponse;
 import com.settl.backend.group.Group;
 import com.settl.backend.group.GroupMemberRepository;
 import com.settl.backend.group.GroupRepository;
@@ -10,12 +12,14 @@ import com.settl.backend.settlement.dto.CreateSettlementRequest;
 import com.settl.backend.settlement.dto.SettlementResponse;
 import com.settl.backend.user.User;
 import com.settl.backend.user.UserRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.Currency;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -76,7 +80,7 @@ public class SettlementService {
         String currency = request.currency() != null && !request.currency().isBlank()
                 ? request.currency().trim().toUpperCase()
                 : group.getDefaultCurrency();
-        validateCurrency(currency);
+        CurrencyValidator.validate(currency);
 
         boolean simplified = request.isSimplified() != null && request.isSimplified();
 
@@ -106,13 +110,27 @@ public class SettlementService {
     }
 
     @Transactional(readOnly = true)
-    public List<SettlementResponse> getGroupSettlements(UUID groupId, UUID callerId) {
+    public PageResponse<SettlementResponse> getGroupSettlements(UUID groupId, UUID callerId, int page, int size) {
         if (!groupMemberRepository.existsByGroupIdAndUserId(groupId, callerId)) {
             throw ApiException.forbidden("You must be a member of this group to view settlements", "NOT_A_GROUP_MEMBER");
         }
 
-        List<Settlement> settlements = settlementRepository.findByGroupIdOrderBySettledAtDesc(groupId);
-        return settlements.stream().map(this::mapToResponse).toList();
+        int clampedPage = Math.max(0, page);
+        int clampedSize = Math.clamp(size, 1, 100);
+        Pageable pageable = PageRequest.of(clampedPage, clampedSize);
+
+        Page<Settlement> settlementPage = settlementRepository.findByGroupIdOrderBySettledAtDesc(groupId, pageable);
+        List<SettlementResponse> dtos = settlementPage.getContent().stream()
+                .map(this::mapToResponse)
+                .toList();
+
+        return new PageResponse<>(
+                dtos,
+                settlementPage.getNumber(),
+                settlementPage.getSize(),
+                settlementPage.getTotalElements(),
+                settlementPage.getTotalPages()
+        );
     }
 
     private SettlementResponse mapToResponse(Settlement settlement) {
@@ -130,13 +148,5 @@ public class SettlementService {
                 settlement.isSimplified(),
                 settlement.getSettledAt()
         );
-    }
-
-    private void validateCurrency(String currencyCode) {
-        try {
-            Currency.getInstance(currencyCode);
-        } catch (Exception e) {
-            throw ApiException.badRequest("Invalid ISO-4217 currency code: " + currencyCode, "INVALID_CURRENCY");
-        }
     }
 }

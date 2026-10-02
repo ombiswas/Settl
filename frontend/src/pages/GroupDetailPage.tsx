@@ -85,6 +85,8 @@ export const GroupDetailPage: React.FC = () => {
   // Search & Filter for expenses
   const [expenseSearch, setExpenseSearch] = useState('')
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('')
+  const [expensePage, setExpensePage] = useState(0)
+  const [settlementPage, setSettlementPage] = useState(0)
 
   // Group Details
   const { data: group, isLoading: groupLoading } = useQuery({
@@ -160,15 +162,16 @@ export const GroupDetailPage: React.FC = () => {
   }
 
   // Expenses
-  const { data: expenses, isLoading: expensesLoading } = useQuery({
-    queryKey: ['expenses', groupId],
+  const { data: expensesPageData, isLoading: expensesLoading } = useQuery({
+    queryKey: ['expenses', groupId, expensePage],
     queryFn: async () => {
-      if (!groupId) return []
-      const res = await expensesApi.listGroup(groupId)
+      if (!groupId) return null
+      const res = await expensesApi.listGroup(groupId, { page: expensePage, size: 20 })
       return res.data.data
     },
     enabled: !!groupId,
   })
+  const expenses = expensesPageData?.content || []
 
   // Balances
   const { data: balancesData } = useQuery({
@@ -193,15 +196,16 @@ export const GroupDetailPage: React.FC = () => {
   })
 
   // Settlements History
-  const { data: settlements } = useQuery({
-    queryKey: ['settlements', groupId],
+  const { data: settlementsPageData } = useQuery({
+    queryKey: ['settlements', groupId, settlementPage],
     queryFn: async () => {
-      if (!groupId) return []
-      const res = await settlementsApi.list(groupId)
+      if (!groupId) return null
+      const res = await settlementsApi.list(groupId, { page: settlementPage, size: 20 })
       return res.data.data
     },
     enabled: !!groupId && activeTab === 'settlements',
   })
+  const settlements = settlementsPageData?.content || []
 
   // Recurring Expenses
   const { data: recurringList } = useQuery({
@@ -639,6 +643,31 @@ export const GroupDetailPage: React.FC = () => {
                 </p>
               </div>
             )}
+
+            {expensesPageData && expensesPageData.totalPages > 1 && (
+              <div className="mt-4 flex items-center justify-between border-t border-slate-200 bg-white px-4 py-3 rounded-xl shadow-xs">
+                <div className="text-xs text-slate-500">
+                  Showing page <span className="font-semibold text-slate-700">{expensePage + 1}</span> of{' '}
+                  <span className="font-semibold text-slate-700">{expensesPageData.totalPages}</span> ({expensesPageData.totalElements} total)
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setExpensePage((p) => Math.max(0, p - 1))}
+                    disabled={expensePage === 0}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setExpensePage((p) => Math.min(expensesPageData.totalPages - 1, p + 1))}
+                    disabled={expensePage >= expensesPageData.totalPages - 1}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -831,6 +860,31 @@ export const GroupDetailPage: React.FC = () => {
             ) : (
               <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white p-12 text-center text-sm text-slate-500">
                 No repayments have been recorded yet.
+              </div>
+            )}
+
+            {settlementsPageData && settlementsPageData.totalPages > 1 && (
+              <div className="mt-4 flex items-center justify-between border-t border-slate-200 bg-white px-4 py-3 rounded-xl shadow-xs">
+                <div className="text-xs text-slate-500">
+                  Showing page <span className="font-semibold text-slate-700">{settlementPage + 1}</span> of{' '}
+                  <span className="font-semibold text-slate-700">{settlementsPageData.totalPages}</span> ({settlementsPageData.totalElements} total)
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setSettlementPage((p) => Math.max(0, p - 1))}
+                    disabled={settlementPage === 0}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setSettlementPage((p) => Math.min(settlementsPageData.totalPages - 1, p + 1))}
+                    disabled={settlementPage >= settlementsPageData.totalPages - 1}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             )}
           </div>

@@ -1,6 +1,8 @@
 package com.settl.backend.settlement;
 
 import com.settl.backend.settlement.dto.UserAmountDto;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -29,6 +31,12 @@ public interface SettlementRepository extends JpaRepository<Settlement, UUID> {
 
     @Query("SELECT s FROM Settlement s WHERE s.group.id = :groupId ORDER BY s.settledAt DESC")
     List<Settlement> findByGroupIdOrderBySettledAtDesc(@Param("groupId") UUID groupId);
+
+    @Query(
+            value = "SELECT s FROM Settlement s JOIN FETCH s.fromUser JOIN FETCH s.toUser JOIN FETCH s.group WHERE s.group.id = :groupId ORDER BY s.settledAt DESC, s.id DESC",
+            countQuery = "SELECT count(s) FROM Settlement s WHERE s.group.id = :groupId"
+    )
+    Page<Settlement> findByGroupIdOrderBySettledAtDesc(@Param("groupId") UUID groupId, Pageable pageable);
 
     @Query("SELECT COUNT(s) FROM Settlement s WHERE s.fromUser.id = :userId OR s.toUser.id = :userId")
     long countSettlementsByUserId(@Param("userId") UUID userId);

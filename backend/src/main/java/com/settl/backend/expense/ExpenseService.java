@@ -3,6 +3,8 @@ package com.settl.backend.expense;
 import com.settl.backend.audit.AuditAction;
 import com.settl.backend.audit.AuditService;
 import com.settl.backend.common.ApiException;
+import com.settl.backend.common.CurrencyValidator;
+import com.settl.backend.common.PageResponse;
 import com.settl.backend.expense.dto.CreateExpenseRequest;
 import com.settl.backend.expense.dto.ExpenseResponse;
 import com.settl.backend.expense.dto.ExpenseShareDto;
@@ -16,11 +18,13 @@ import com.settl.backend.group.GroupMemberRepository;
 import com.settl.backend.group.GroupRepository;
 import com.settl.backend.user.User;
 import com.settl.backend.user.UserRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.Currency;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +36,7 @@ import java.util.stream.Collectors;
 public class ExpenseService {
 
     private final ExpenseRepository expenseRepository;
+    private final ExpenseShareRepository expenseShareRepository;
     private final GroupRepository groupRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
@@ -40,6 +45,7 @@ public class ExpenseService {
 
     public ExpenseService(
             ExpenseRepository expenseRepository,
+            ExpenseShareRepository expenseShareRepository,
             GroupRepository groupRepository,
             GroupMemberRepository groupMemberRepository,
             UserRepository userRepository,
@@ -47,6 +53,7 @@ public class ExpenseService {
             AuditService auditService
     ) {
         this.expenseRepository = expenseRepository;
+        this.expenseShareRepository = expenseShareRepository;
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.userRepository = userRepository;
@@ -76,7 +83,7 @@ public class ExpenseService {
         String currency = request.currency() != null && !request.currency().isBlank()
                 ? request.currency().trim().toUpperCase()
                 : group.getDefaultCurrency();
-        validateCurrency(currency);
+        CurrencyValidator.validate(currency);
 
         // Fetch all group members for validation and auto-splits
         List<GroupMember> groupMembers = groupMemberRepository.findByGroupIdWithUser(groupId);
@@ -131,10 +138,41 @@ public class ExpenseService {
     }
 
     @Transactional(readOnly = true)
-    public List<ExpenseResponse> getGroupExpenses(UUID groupId, UUID callerId) {
+    public PageResponse<ExpenseResponse> getGroupExpenses(UUID groupId, UUID callerId, int page, int size) {
         verifyMembership(groupId, callerId);
-        List<Expense> expenses = expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId);
-        return expenses.stream().map(this::mapToExpenseResponse).toList();
+
+        int clampedPage = Math.max(0, page);
+        int clampedSize = Math.clamp(size, 1, 100);
+        Pageable pageable = PageRequest.of(clampedPage, clampedSize);
+
+        Page<Expense> expensePage = expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId, pageable);
+        List<Expense> expenses = expensePage.getContent();
+        if (expenses.isEmpty()) {
+            return new PageResponse<>(
+                    List.of(),
+                    expensePage.getNumber(),
+                    expensePage.getSize(),
+                    expensePage.getTotalElements(),
+                    expensePage.getTotalPages()
+            );
+        }
+
+        List<UUID> expenseIds = expenses.stream().map(Expense::getId).toList();
+        List<ExpenseShare> shares = expenseShareRepository.findByExpenseIdIn(expenseIds);
+        Map<UUID, List<ExpenseShare>> sharesByExpenseId = shares.stream()
+                .collect(Collectors.groupingBy(s -> s.getExpense().getId()));
+
+        List<ExpenseResponse> dtos = expenses.stream()
+                .map(exp -> mapToExpenseResponse(exp, sharesByExpenseId.getOrDefault(exp.getId(), List.of())))
+                .toList();
+
+        return new PageResponse<>(
+                dtos,
+                expensePage.getNumber(),
+                expensePage.getSize(),
+                expensePage.getTotalElements(),
+                expensePage.getTotalPages()
+        );
     }
 
     @Transactional(readOnly = true)
@@ -176,7 +214,7 @@ public class ExpenseService {
         String currency = request.currency() != null && !request.currency().isBlank()
                 ? request.currency().trim().toUpperCase()
                 : expense.getCurrency();
-        validateCurrency(currency);
+        CurrencyValidator.validate(currency);
 
         List<GroupMember> groupMembers = groupMemberRepository.findByGroupIdWithUser(groupId);
         Set<UUID> memberUserIds = groupMembers.stream().map(gm -> gm.getUser().getId()).collect(Collectors.toSet());
@@ -289,7 +327,11 @@ public class ExpenseService {
     }
 
     private ExpenseResponse mapToExpenseResponse(Expense expense) {
-        List<ExpenseShareDto> shares = expense.getShares().stream()
+        return mapToExpenseResponse(expense, expense.getShares());
+    }
+
+    private ExpenseResponse mapToExpenseResponse(Expense expense, List<ExpenseShare> expenseShares) {
+        List<ExpenseShareDto> shares = expenseShares.stream()
                 .map(share -> new ExpenseShareDto(
                         share.getUser().getId(),
                         share.getUser().getDisplayName(),
@@ -315,13 +357,5 @@ public class ExpenseService {
                 shares,
                 expense.getCreatedAt()
         );
-    }
-
-    private void validateCurrency(String currencyCode) {
-        try {
-            Currency.getInstance(currencyCode);
-        } catch (Exception e) {
-            throw ApiException.badRequest("Invalid ISO-4217 currency code: " + currencyCode, "INVALID_CURRENCY");
-        }
     }
 }

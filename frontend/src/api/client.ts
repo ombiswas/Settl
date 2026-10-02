@@ -15,6 +15,7 @@ import type {
   Group,
   GroupBalancesResponse,
   Page,
+  PageResponse,
   AuditLogEntry,
   PersonalAnalyticsResponse,
   PersonalExpense,
@@ -190,8 +191,8 @@ export const invitationsApi = {
 }
 
 export const expensesApi = {
-  listGroup: (groupId: string) =>
-    apiClient.get<ApiResponse<Expense[]>>(`/groups/${groupId}/expenses`),
+  listGroup: (groupId: string, params?: { page?: number; size?: number }) =>
+    apiClient.get<ApiResponse<PageResponse<Expense>>>(`/groups/${groupId}/expenses`, { params }),
 
   getGroup: (groupId: string, expenseId: string) =>
     apiClient.get<ApiResponse<Expense>>(`/groups/${groupId}/expenses/${expenseId}`),
@@ -233,8 +234,8 @@ export const balancesApi = {
 }
 
 export const settlementsApi = {
-  list: (groupId: string) =>
-    apiClient.get<ApiResponse<Settlement[]>>(`/groups/${groupId}/settlements`),
+  list: (groupId: string, params?: { page?: number; size?: number }) =>
+    apiClient.get<ApiResponse<PageResponse<Settlement>>>(`/groups/${groupId}/settlements`, { params }),
 
   record: (groupId: string, data: CreateSettlementRequest) =>
     apiClient.post<ApiResponse<Settlement>>(`/groups/${groupId}/settlements`, data),

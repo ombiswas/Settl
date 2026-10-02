@@ -41,6 +41,9 @@ class ExpenseServiceTest {
     private ExpenseRepository expenseRepository;
 
     @Mock
+    private ExpenseShareRepository expenseShareRepository;
+
+    @Mock
     private GroupRepository groupRepository;
 
     @Mock
@@ -76,6 +79,7 @@ class ExpenseServiceTest {
 
         expenseService = new ExpenseService(
                 expenseRepository,
+                expenseShareRepository,
                 groupRepository,
                 groupMemberRepository,
                 userRepository,

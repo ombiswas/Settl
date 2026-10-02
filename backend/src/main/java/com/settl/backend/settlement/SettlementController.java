@@ -2,6 +2,7 @@ package com.settl.backend.settlement;
 
 import com.settl.backend.auth.CustomUserPrincipal;
 import com.settl.backend.common.ApiResponse;
+import com.settl.backend.common.PageResponse;
 import com.settl.backend.settlement.dto.CreateSettlementRequest;
 import com.settl.backend.settlement.dto.SettlementResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -46,12 +48,14 @@ public class SettlementController {
     }
 
     @GetMapping
-    @Operation(summary = "List group settlements", description = "Retrieves all recorded settlements and debt payments in this group (member-only)")
-    public ResponseEntity<ApiResponse<List<SettlementResponse>>> getGroupSettlements(
+    @Operation(summary = "List group settlements", description = "Retrieves paginated settlements in this group (member-only)")
+    public ResponseEntity<ApiResponse<PageResponse<SettlementResponse>>> getGroupSettlements(
             @PathVariable("groupId") UUID groupId,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "20") int size,
             @AuthenticationPrincipal CustomUserPrincipal principal
     ) {
-        List<SettlementResponse> settlements = settlementService.getGroupSettlements(groupId, principal.id());
+        PageResponse<SettlementResponse> settlements = settlementService.getGroupSettlements(groupId, principal.id(), page, size);
         return ResponseEntity.ok(ApiResponse.success(settlements, "Group settlements retrieved successfully"));
     }
 }
