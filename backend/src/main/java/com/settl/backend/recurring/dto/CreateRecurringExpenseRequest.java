@@ -3,6 +3,7 @@ package com.settl.backend.recurring.dto;
 import com.settl.backend.expense.ExpenseCategory;
 import com.settl.backend.expense.SplitType;
 import com.settl.backend.recurring.RecurringFrequency;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -27,6 +28,7 @@ public record CreateRecurringExpenseRequest(
         ExpenseCategory category,
 
         @NotNull(message = "Split type is required")
+        @Schema(description = "Split type. Currently only EQUAL is supported for recurring expenses", allowableValues = {"EQUAL"}, defaultValue = "EQUAL")
         SplitType splitType,
 
         @NotNull(message = "Frequency is required")

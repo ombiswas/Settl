@@ -193,6 +193,21 @@ export const CreateRecurringExpenseModal: React.FC<CreateRecurringExpenseModalPr
             <CategoryPicker selected={category} onSelect={setCategory} />
           </div>
 
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+              Split Type
+            </label>
+            <div className="mt-1.5 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm">
+              <span className="font-medium text-slate-800">Equal Split</span>
+              <span className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-500">
+                Only supported type
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">
+              Automated recurring expenses currently only support equal split across active group members.
+            </p>
+          </div>
+
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
             <p>
               💡 This recurring template will automatically generate an equal split expense for all current group members on every scheduled run.

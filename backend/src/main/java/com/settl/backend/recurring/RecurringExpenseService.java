@@ -67,6 +67,10 @@ public class RecurringExpenseService {
 
     @Transactional
     public RecurringExpenseResponse createRecurringExpense(UUID groupId, UUID callerId, CreateRecurringExpenseRequest request) {
+        if (request.splitType() != SplitType.EQUAL) {
+            throw ApiException.badRequest("Recurring expenses only support EQUAL split", "UNSUPPORTED_SPLIT_TYPE");
+        }
+
         Group group = groupRepository.findById(groupId)
                 .orElseThrow(() -> ApiException.notFound("Group not found", "GROUP_NOT_FOUND"));
 

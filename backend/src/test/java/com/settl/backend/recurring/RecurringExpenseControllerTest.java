@@ -118,4 +118,26 @@ class RecurringExpenseControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(1));
     }
+
+    @Test
+    void createRecurringExpenseWithPercentageSplitShouldReturnBadRequest() throws Exception {
+        CreateRecurringExpenseRequest req = new CreateRecurringExpenseRequest(
+                "Monthly Rent 60/40",
+                new BigDecimal("1200.00"),
+                "USD",
+                ExpenseCategory.HOUSING_AND_UTILITIES,
+                SplitType.PERCENTAGE,
+                RecurringFrequency.MONTHLY,
+                Instant.now().plus(30, ChronoUnit.DAYS)
+        );
+
+        mockMvc.perform(post("/api/groups/" + testGroup.getId() + "/recurring-expenses")
+                        .header("Authorization", "Bearer " + aliceToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("UNSUPPORTED_SPLIT_TYPE"))
+                .andExpect(jsonPath("$.message").value("Recurring expenses only support EQUAL split"));
+    }
 }

@@ -35,7 +35,7 @@ public class RecurringExpenseController {
     }
 
     @PostMapping
-    @Operation(summary = "Create recurring expense template", description = "Sets up an automated recurring expense (e.g., rent, subscriptions) that triggers periodically")
+    @Operation(summary = "Create recurring expense template", description = "Sets up an automated recurring expense (e.g., rent, subscriptions) that triggers periodically. Currently only EQUAL split is supported.")
     public ResponseEntity<ApiResponse<RecurringExpenseResponse>> createRecurringExpense(
             @PathVariable("groupId") UUID groupId,
             @AuthenticationPrincipal CustomUserPrincipal principal,

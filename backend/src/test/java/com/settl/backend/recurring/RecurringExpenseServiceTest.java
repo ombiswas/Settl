@@ -1,6 +1,7 @@
 package com.settl.backend.recurring;
 
 import com.settl.backend.audit.AuditService;
+import com.settl.backend.common.ApiException;
 import com.settl.backend.expense.Expense;
 import com.settl.backend.expense.ExpenseCategory;
 import com.settl.backend.expense.ExpenseRepository;
@@ -35,6 +36,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -133,6 +135,27 @@ class RecurringExpenseServiceTest {
         assertThat(response.amount()).isEqualTo(new BigDecimal("60.00"));
         assertThat(response.frequency()).isEqualTo(RecurringFrequency.MONTHLY);
         assertThat(response.active()).isTrue();
+    }
+
+    @Test
+    void createRecurringExpenseWithNonEqualSplitShouldThrowBadRequest() {
+        CreateRecurringExpenseRequest request = new CreateRecurringExpenseRequest(
+                "Rent 60/40",
+                new BigDecimal("1000.00"),
+                "USD",
+                ExpenseCategory.HOUSING_AND_UTILITIES,
+                SplitType.PERCENTAGE,
+                RecurringFrequency.MONTHLY,
+                Instant.now().plus(7, ChronoUnit.DAYS)
+        );
+
+        assertThatThrownBy(() -> recurringExpenseService.createRecurringExpense(groupId, aliceId, request))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> {
+                    ApiException apiEx = (ApiException) ex;
+                    assertThat(apiEx.getErrorCode()).isEqualTo("UNSUPPORTED_SPLIT_TYPE");
+                    assertThat(apiEx.getMessage()).isEqualTo("Recurring expenses only support EQUAL split");
+                });
     }
 
     @Test
