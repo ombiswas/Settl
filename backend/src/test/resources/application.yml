@@ -4,6 +4,19 @@ spring:
     username: ${TEST_DB_USER:postgres}
     password: ${TEST_DB_PASSWORD:changeme}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      keepalive-time: ${HIKARI_KEEPALIVE_TIME:60000}
+      leak-detection-threshold: ${HIKARI_LEAK_DETECTION_THRESHOLD:30000}
+  jpa:
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: ${HIBERNATE_BATCH_SIZE:25}
+          batch_versioned_data: true
+        order_inserts: true
+        order_updates: true
+        batch_versioned_data: true
+        default_batch_fetch_size: ${HIBERNATE_DEFAULT_BATCH_FETCH_SIZE:50}
   flyway:
     enabled: true
     baseline-on-migrate: true
