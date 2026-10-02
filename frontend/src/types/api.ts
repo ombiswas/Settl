@@ -22,7 +22,8 @@ export interface GroupMember {
   userId: string
   email: string
   displayName: string
-  admin: boolean
+  admin?: boolean
+  isAdmin?: boolean
   joinedAt: string
 }
 
@@ -41,9 +42,40 @@ export interface CreateGroupRequest {
   defaultCurrency: string
 }
 
+export interface UpdateGroupRequest {
+  name: string
+  defaultCurrency?: string
+}
+
 export interface AddMemberRequest {
   email: string
   isAdmin?: boolean
+}
+
+export interface GroupInvitation {
+  id: string
+  groupId: string
+  email: string
+  invitedById: string
+  invitedByName: string
+  isAdmin: boolean
+  admin?: boolean
+  status: 'PENDING' | 'ACCEPTED' | 'REVOKED' | 'EXPIRED'
+  expiresAt: string
+  createdAt: string
+}
+
+export interface InvitationPreview {
+  invitationId: string
+  groupId: string
+  groupName: string
+  defaultCurrency: string
+  email: string
+  inviterName: string
+  isAdmin: boolean
+  admin?: boolean
+  expiresAt: string
+  isExpired: boolean
 }
 
 export type SplitType = 'EQUAL' | 'EXACT' | 'PERCENTAGE' | 'SHARES' | 'PERSONAL'
@@ -120,6 +152,14 @@ export interface PersonalExpense {
 }
 
 export interface CreatePersonalExpenseRequest {
+  description: string
+  amount: number
+  currency?: string
+  category: ExpenseCategory
+  receiptUrl?: string
+}
+
+export interface UpdatePersonalExpenseRequest {
   description: string
   amount: number
   currency?: string

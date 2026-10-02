@@ -7,6 +7,7 @@ import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { CheckEmailPage } from './pages/CheckEmailPage'
 import { VerifyEmailPage } from './pages/VerifyEmailPage'
+import { JoinGroupPage } from './pages/JoinGroupPage'
 import { GroupsPage } from './pages/GroupsPage'
 import { GroupDetailPage } from './pages/GroupDetailPage'
 import { PersonalExpensesPage } from './pages/PersonalExpensesPage'
@@ -35,6 +36,7 @@ export const App: React.FC = () => {
               <Route path="/register" element={<RegisterPage />} />
               <Route path="/check-email" element={<CheckEmailPage />} />
               <Route path="/verify" element={<VerifyEmailPage />} />
+              <Route path="/join" element={<JoinGroupPage />} />
 
               {/* Protected App Routes */}
               <Route

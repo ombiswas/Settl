@@ -10,8 +10,17 @@ import com.settl.backend.auth.dto.VerifyEmailResponse;
 import com.settl.backend.common.ApiException;
 import com.settl.backend.user.User;
 import com.settl.backend.user.UserRepository;
+import com.settl.backend.audit.AuditAction;
+import com.settl.backend.audit.AuditService;
+import com.settl.backend.group.Group;
+import com.settl.backend.group.GroupInvitation;
+import com.settl.backend.group.GroupInvitationRepository;
+import com.settl.backend.group.GroupInvitationStatus;
+import com.settl.backend.group.GroupMember;
+import com.settl.backend.group.GroupMemberRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseCookie;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -25,7 +34,10 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
 import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -41,12 +53,36 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
     private final JwtService jwtService;
+    private final GroupInvitationRepository groupInvitationRepository;
+    private final GroupMemberRepository groupMemberRepository;
+    private final AuditService auditService;
 
     @Value("${app.cors.allowed-origins:http://localhost:5173}")
     private String appBaseUrl;
 
     @Value("${app.jwt.refresh-token-expiration-ms:604800000}")
     private long refreshTokenExpirationMs;
+
+    @Autowired
+    public AuthService(
+            UserRepository userRepository,
+            RefreshTokenRepository refreshTokenRepository,
+            PasswordEncoder passwordEncoder,
+            EmailService emailService,
+            JwtService jwtService,
+            GroupInvitationRepository groupInvitationRepository,
+            GroupMemberRepository groupMemberRepository,
+            AuditService auditService
+    ) {
+        this.userRepository = userRepository;
+        this.refreshTokenRepository = refreshTokenRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.emailService = emailService;
+        this.jwtService = jwtService;
+        this.groupInvitationRepository = groupInvitationRepository;
+        this.groupMemberRepository = groupMemberRepository;
+        this.auditService = auditService;
+    }
 
     public AuthService(
             UserRepository userRepository,
@@ -55,11 +91,7 @@ public class AuthService {
             EmailService emailService,
             JwtService jwtService
     ) {
-        this.userRepository = userRepository;
-        this.refreshTokenRepository = refreshTokenRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.emailService = emailService;
-        this.jwtService = jwtService;
+        this(userRepository, refreshTokenRepository, passwordEncoder, emailService, jwtService, null, null, null);
     }
 
     public record LoginResult(AuthResponse authResponse, ResponseCookie refreshCookie) {}
@@ -76,24 +108,51 @@ public class AuthService {
         String rawVerificationToken = generateSecureToken();
         String hashedVerificationToken = hashToken(rawVerificationToken);
 
+        boolean emailPreVerified = false;
+        GroupInvitation matchingInvitation = null;
+
+        if (groupInvitationRepository != null && request.inviteToken() != null && !request.inviteToken().isBlank()) {
+            String tokenHash = hashToken(request.inviteToken().trim());
+            Optional<GroupInvitation> invOpt = groupInvitationRepository.findByTokenHashWithGroupAndInviter(tokenHash);
+            if (invOpt.isPresent()) {
+                GroupInvitation inv = invOpt.get();
+                if (inv.getStatus() == GroupInvitationStatus.PENDING && !inv.isExpired()
+                        && inv.getEmail().equalsIgnoreCase(normalizedEmail)) {
+                    matchingInvitation = inv;
+                    emailPreVerified = true;
+                }
+            }
+        }
+
         User user = new User(normalizedEmail, passwordHash, request.displayName().trim());
-        user.setEmailVerified(false);
-        user.setVerificationToken(hashedVerificationToken);
-        user.setVerificationTokenExpiresAt(Instant.now().plus(24, ChronoUnit.HOURS));
+        user.setEmailVerified(emailPreVerified);
+        if (!emailPreVerified) {
+            user.setVerificationToken(hashedVerificationToken);
+            user.setVerificationTokenExpiresAt(Instant.now().plus(24, ChronoUnit.HOURS));
+        }
 
         User savedUser = userRepository.save(user);
 
-        String verificationUrl = appBaseUrl.split(",")[0].trim() + "/verify?token=" + rawVerificationToken;
-        emailService.sendVerificationEmail(savedUser.getEmail(), savedUser.getDisplayName(), verificationUrl);
+        if (!emailPreVerified) {
+            String verificationUrl = appBaseUrl.split(",")[0].trim() + "/verify?token=" + rawVerificationToken;
+            emailService.sendVerificationEmail(savedUser.getEmail(), savedUser.getDisplayName(), verificationUrl);
+        } else if (matchingInvitation != null && groupMemberRepository != null) {
+            claimInvitation(matchingInvitation, savedUser);
+        }
 
-        log.info("User registered successfully: id={}, email={}", savedUser.getId(), savedUser.getEmail());
+        log.info("User registered successfully: id={}, email={}, emailVerified={}",
+                savedUser.getId(), savedUser.getEmail(), savedUser.isEmailVerified());
+
+        String message = emailPreVerified
+                ? "Registration successful! You have joined the group and can log in immediately."
+                : "Registration successful. Please check your email to verify your account.";
 
         return new RegisterResponse(
                 savedUser.getId(),
                 savedUser.getEmail(),
                 savedUser.getDisplayName(),
                 savedUser.isEmailVerified(),
-                "Registration successful. Please check your email to verify your account."
+                message
         );
     }
 
@@ -120,6 +179,9 @@ public class AuthService {
         user.setVerificationToken(null);
         user.setVerificationTokenExpiresAt(null);
         userRepository.save(user);
+
+        // Auto-claim any pending group invitations for this verified email
+        autoClaimPendingInvitations(user);
 
         log.info("Email verified successfully for user id={}", user.getId());
 
@@ -272,6 +334,40 @@ public class AuthService {
             return HexFormat.of().formatHex(hash);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 algorithm not available", e);
+        }
+    }
+
+    private void claimInvitation(GroupInvitation invitation, User user) {
+        if (groupMemberRepository == null) return;
+        Group group = invitation.getGroup();
+        if (!groupMemberRepository.existsByGroupIdAndUserId(group.getId(), user.getId())) {
+            GroupMember member = new GroupMember(group, user, invitation.isAdmin());
+            groupMemberRepository.save(member);
+
+            if (auditService != null) {
+                Map<String, Object> details = new HashMap<>();
+                details.put("addedUserId", user.getId().toString());
+                details.put("addedUserEmail", user.getEmail());
+                details.put("addedUserName", user.getDisplayName());
+                details.put("isAdmin", invitation.isAdmin());
+                details.put("viaInvitation", true);
+                auditService.logActivity(group, user, AuditAction.MEMBER_JOINED, details);
+            }
+        }
+        invitation.setStatus(GroupInvitationStatus.ACCEPTED);
+        if (groupInvitationRepository != null) {
+            groupInvitationRepository.save(invitation);
+        }
+    }
+
+    private void autoClaimPendingInvitations(User user) {
+        if (groupInvitationRepository == null || groupMemberRepository == null) return;
+        List<GroupInvitation> pendingList = groupInvitationRepository
+                .findByEmailAndStatusWithGroup(user.getEmail().toLowerCase(), GroupInvitationStatus.PENDING);
+        for (GroupInvitation inv : pendingList) {
+            if (!inv.isExpired()) {
+                claimInvitation(inv, user);
+            }
         }
     }
 }

@@ -6,7 +6,9 @@ import type {
   CategoryInfo,
   CreateExpenseRequest,
   CreateGroupRequest,
+  UpdateGroupRequest,
   CreatePersonalExpenseRequest,
+  UpdatePersonalExpenseRequest,
   CreateRecurringExpenseRequest,
   CreateSettlementRequest,
   Expense,
@@ -20,6 +22,8 @@ import type {
   Settlement,
   SuggestedSettlementsResponse,
   AddMemberRequest,
+  GroupInvitation,
+  InvitationPreview,
 } from '../types/api'
 
 const apiBase = ((import.meta as { env?: { VITE_API_BASE_URL?: string } }).env?.VITE_API_BASE_URL)?.replace(/\/+$/, '') || '/api'
@@ -121,7 +125,7 @@ apiClient.interceptors.response.use(
    ========================================================================= */
 
 export const authApi = {
-  register: (data: { email: string; password: string; displayName: string }) =>
+  register: (data: { email: string; password: string; displayName: string; inviteToken?: string }) =>
     apiClient.post<ApiResponse<{ userId: string; email: string; displayName: string; emailVerified: boolean }>>('/auth/register', data),
 
   login: (data: { email: string; password: string }) =>
@@ -160,6 +164,29 @@ export const groupsApi = {
 
   removeMember: (groupId: string, memberId: string) =>
     apiClient.delete<ApiResponse<void>>(`/groups/${groupId}/members/${memberId}`),
+
+  delete: (groupId: string) =>
+    apiClient.delete<ApiResponse<void>>(`/groups/${groupId}`),
+
+  update: (groupId: string, data: UpdateGroupRequest) =>
+    apiClient.put<ApiResponse<Group>>(`/groups/${groupId}`, data),
+
+  getInvitations: (groupId: string) =>
+    apiClient.get<ApiResponse<GroupInvitation[]>>(`/groups/${groupId}/invitations`),
+
+  resendInvitation: (groupId: string, invitationId: string) =>
+    apiClient.post<ApiResponse<GroupInvitation>>(`/groups/${groupId}/invitations/${invitationId}/resend`),
+
+  revokeInvitation: (groupId: string, invitationId: string) =>
+    apiClient.delete<ApiResponse<void>>(`/groups/${groupId}/invitations/${invitationId}`),
+}
+
+export const invitationsApi = {
+  preview: (token: string) =>
+    apiClient.get<ApiResponse<InvitationPreview>>('/invitations/preview', { params: { token } }),
+
+  accept: (token: string) =>
+    apiClient.post<ApiResponse<Group>>('/invitations/accept', null, { params: { token } }),
 }
 
 export const expensesApi = {
@@ -183,6 +210,12 @@ export const expensesApi = {
 
   createPersonal: (data: CreatePersonalExpenseRequest) =>
     apiClient.post<ApiResponse<PersonalExpense>>('/expenses/personal', data),
+
+  updatePersonal: (expenseId: string, data: UpdatePersonalExpenseRequest) =>
+    apiClient.put<ApiResponse<PersonalExpense>>(`/expenses/personal/${expenseId}`, data),
+
+  deletePersonal: (expenseId: string) =>
+    apiClient.delete<ApiResponse<void>>(`/expenses/personal/${expenseId}`),
 
   getPersonalAnalytics: (params?: { startDate?: string; endDate?: string }) =>
     apiClient.get<ApiResponse<PersonalAnalyticsResponse>>('/expenses/personal/analytics', { params }),
