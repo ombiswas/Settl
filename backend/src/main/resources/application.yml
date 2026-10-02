@@ -98,12 +98,16 @@ app:
     delete-account:
       limit: ${RATE_LIMIT_DELETE_ACCOUNT:3}
       window-seconds: ${RATE_LIMIT_DELETE_ACCOUNT_WINDOW:900}
+  swagger:
+    enabled: ${SWAGGER_ENABLED:true}
 
 springdoc:
   api-docs:
     path: /v3/api-docs
+    enabled: ${app.swagger.enabled:true}
   swagger-ui:
     path: /swagger-ui.html
+    enabled: ${app.swagger.enabled:true}
     operationsSorter: method
     tagsSorter: alpha
 

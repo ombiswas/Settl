@@ -37,6 +37,9 @@ public class SecurityConfig {
     @Value("${app.cors.allowed-origins:http://localhost:5173}")
     private String allowedOrigins;
 
+    @Value("${app.swagger.enabled:true}")
+    private boolean swaggerEnabled;
+
     private final JwtAuthFilter jwtAuthFilter;
     private final ObjectMapper objectMapper;
 
@@ -55,26 +58,31 @@ public class SecurityConfig {
                         .authenticationEntryPoint(authenticationEntryPoint())
                         .accessDeniedHandler(accessDeniedHandler())
                 )
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(
-                                "/api/health",
-                                "/api/auth/register",
-                                "/api/auth/verify",
-                                "/api/auth/resend-verification",
-                                "/api/auth/login",
-                                "/api/auth/refresh",
-                                "/api/auth/logout",
-                                "/api/currencies/**",
-                                "/api/categories",
-                                "/api/invitations/preview",
+                .authorizeHttpRequests(auth -> {
+                    if (swaggerEnabled) {
+                        auth.requestMatchers(
+                                "/v3/api-docs",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
-                                "/api-docs/**",
-                                "/error"
-                        ).permitAll()
-                        .anyRequest().authenticated()
-                )
+                                "/api-docs/**"
+                        ).permitAll();
+                    }
+                    auth.requestMatchers(
+                            "/api/health",
+                            "/api/auth/register",
+                            "/api/auth/verify",
+                            "/api/auth/resend-verification",
+                            "/api/auth/login",
+                            "/api/auth/refresh",
+                            "/api/auth/logout",
+                            "/api/currencies/**",
+                            "/api/categories",
+                            "/api/invitations/preview",
+                            "/error"
+                    ).permitAll()
+                    .anyRequest().authenticated();
+                })
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

@@ -1,11 +1,11 @@
 spring:
   datasource:
-    url: ${DB_URL}
-    username: ${DB_USER}
-    password: ${DB_PASSWORD}
+    url: ${DB_URL:${TEST_DB_URL:jdbc:postgresql://localhost:5432/settl?options=-c%20timezone=UTC}}
+    username: ${DB_USER:${TEST_DB_USER:postgres}}
+    password: ${DB_PASSWORD:${TEST_DB_PASSWORD:changeme}}
   data:
     redis:
-      host: ${REDIS_HOST}
+      host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
   jpa:
@@ -16,11 +16,13 @@ spring:
     baseline-on-migrate: false
 
 app:
+  swagger:
+    enabled: ${SWAGGER_ENABLED:false}
   jwt:
-    secret: ${JWT_SECRET}
-    refresh-secret: ${JWT_REFRESH_SECRET}
+    secret: ${JWT_SECRET:c2V0dGwtZGV2ZWxvcG1lbnQtYW5kLXRlc3Qtand0LXNlY3JldC1rZXktbXVzdC1iZS1hdC1sZWFzdC0yNTYtYml0cy1sb25nLWZvci1obWFjLXNoYS0yNTY=}
+    refresh-secret: ${JWT_REFRESH_SECRET:c2V0dGwtZGV2ZWxvcG1lbnQtYW5kLXRlc3QtcmVmcmVzaC1zZWNyZXQta2V5LW11c3QtYmUtYXQtbGVhc3QtMjU2LWJpdHMtbG9uZw==}
   cors:
-    allowed-origins: ${APP_BASE_URL}
+    allowed-origins: ${APP_BASE_URL:http://localhost:5173}
   secure-cookies: ${SECURE_COOKIES:true}
 
 logging:
