@@ -1,6 +1,7 @@
 package com.settl.backend.expense;
 
 import com.settl.backend.common.ApiException;
+import com.settl.backend.common.CurrencyValidator;
 import com.settl.backend.expense.dto.CategoryInfoDto;
 import com.settl.backend.expense.dto.CategorySpendingDto;
 import com.settl.backend.expense.dto.CreatePersonalExpenseRequest;
@@ -21,7 +22,6 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Currency;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,7 +50,7 @@ public class PersonalExpenseService {
         String currency = request.currency() != null && !request.currency().isBlank()
                 ? request.currency().trim().toUpperCase()
                 : "USD";
-        validateCurrency(currency);
+        CurrencyValidator.validate(currency);
 
         Expense expense = new Expense(
                 null, // group_id is NULL for personal expenses
@@ -112,7 +112,7 @@ public class PersonalExpenseService {
         String currency = request.currency() != null && !request.currency().isBlank()
                 ? request.currency().trim().toUpperCase()
                 : expense.getCurrency();
-        validateCurrency(currency);
+        CurrencyValidator.validate(currency);
 
         expense.setDescription(request.description());
         expense.setAmount(request.amount());
@@ -223,13 +223,5 @@ public class PersonalExpenseService {
                 expense.getReceiptUrl(),
                 expense.getCreatedAt()
         );
-    }
-
-    private void validateCurrency(String currencyCode) {
-        try {
-            Currency.getInstance(currencyCode);
-        } catch (Exception e) {
-            throw ApiException.badRequest("Invalid ISO-4217 currency code: " + currencyCode, "INVALID_CURRENCY");
-        }
     }
 }

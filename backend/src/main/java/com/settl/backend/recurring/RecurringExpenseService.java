@@ -3,6 +3,7 @@ package com.settl.backend.recurring;
 import com.settl.backend.audit.AuditAction;
 import com.settl.backend.audit.AuditService;
 import com.settl.backend.common.ApiException;
+import com.settl.backend.common.CurrencyValidator;
 import com.settl.backend.expense.Expense;
 import com.settl.backend.expense.ExpenseRepository;
 import com.settl.backend.expense.ExpenseShare;
@@ -27,7 +28,6 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.Currency;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -84,7 +84,7 @@ public class RecurringExpenseService {
         String currency = request.currency() != null && !request.currency().isBlank()
                 ? request.currency().trim().toUpperCase()
                 : group.getDefaultCurrency();
-        validateCurrency(currency);
+        CurrencyValidator.validate(currency);
 
         RecurringExpense recurring = new RecurringExpense(
                 group,
@@ -242,13 +242,5 @@ public class RecurringExpenseService {
                 entity.isActive(),
                 entity.getCreatedAt()
         );
-    }
-
-    private void validateCurrency(String currencyCode) {
-        try {
-            Currency.getInstance(currencyCode);
-        } catch (Exception e) {
-            throw ApiException.badRequest("Invalid ISO-4217 currency code: " + currencyCode, "INVALID_CURRENCY");
-        }
     }
 }
