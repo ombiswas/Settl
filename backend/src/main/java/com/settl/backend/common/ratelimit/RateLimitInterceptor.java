@@ -51,83 +51,90 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             return true;
         }
 
-        RateLimited annotation = handlerMethod.getMethodAnnotation(RateLimited.class);
-        if (annotation == null) {
-            annotation = handlerMethod.getBeanType().getAnnotation(RateLimited.class);
-        }
-
-        String prefix = annotation != null && !annotation.keyPrefix().isBlank()
-                ? annotation.keyPrefix()
-                : (annotation != null ? handlerMethod.getMethod().getName() : DEFAULT_PREFIX);
-        RateLimitType type = annotation != null ? annotation.type() : RateLimitType.USER_OR_IP;
-
-        if (type == RateLimitType.IP_AND_EMAIL) {
-            int ipLimit = resolveLimit(prefix, annotation != null ? annotation.limit() : DEFAULT_LIMIT);
-            int ipWindow = resolveWindowSeconds(prefix, annotation != null ? annotation.windowSeconds() : DEFAULT_WINDOW_SECONDS);
-            String ipKey = "ratelimit:" + prefix + ":ip:" + extractClientIp(request);
-            RateLimitResult ipResult = rateLimiterService.checkRateLimit(ipKey, ipLimit, ipWindow);
-
-            String email = extractEmailFromBody(request);
-            RateLimitResult emailResult = null;
-            if (email != null) {
-                String emailPrefix = prefix + "-email";
-                int emailLimit = resolveLimit(emailPrefix, ipLimit);
-                int emailWindow = resolveWindowSeconds(emailPrefix, ipWindow);
-                String emailKey = "ratelimit:" + prefix + ":email:" + email;
-                emailResult = rateLimiterService.checkRateLimit(emailKey, emailLimit, emailWindow);
+        try {
+            RateLimited annotation = handlerMethod.getMethodAnnotation(RateLimited.class);
+            if (annotation == null) {
+                annotation = handlerMethod.getBeanType().getAnnotation(RateLimited.class);
             }
 
-            RateLimitResult effectiveResult;
-            if (!ipResult.allowed()) {
-                effectiveResult = ipResult;
-            } else if (emailResult != null && !emailResult.allowed()) {
-                effectiveResult = emailResult;
-            } else if (emailResult != null) {
-                long minRemaining = Math.min(ipResult.remaining(), emailResult.remaining());
-                long maxReset = Math.max(ipResult.resetTimestampEpochSeconds(), emailResult.resetTimestampEpochSeconds());
-                effectiveResult = RateLimitResult.allowed(ipResult.limit(), minRemaining, maxReset);
-            } else {
-                effectiveResult = ipResult;
+            String prefix = annotation != null && !annotation.keyPrefix().isBlank()
+                    ? annotation.keyPrefix()
+                    : (annotation != null ? handlerMethod.getMethod().getName() : DEFAULT_PREFIX);
+            RateLimitType type = annotation != null ? annotation.type() : RateLimitType.USER_OR_IP;
+
+            if (type == RateLimitType.IP_AND_EMAIL) {
+                int ipLimit = resolveLimit(prefix, annotation != null ? annotation.limit() : DEFAULT_LIMIT);
+                int ipWindow = resolveWindowSeconds(prefix, annotation != null ? annotation.windowSeconds() : DEFAULT_WINDOW_SECONDS);
+                String ipKey = "ratelimit:" + prefix + ":ip:" + extractClientIp(request);
+                RateLimitResult ipResult = rateLimiterService.checkRateLimit(ipKey, ipLimit, ipWindow);
+
+                String email = extractEmailFromBody(request);
+                RateLimitResult emailResult = null;
+                if (email != null) {
+                    String emailPrefix = prefix + "-email";
+                    int emailLimit = resolveLimit(emailPrefix, ipLimit);
+                    int emailWindow = resolveWindowSeconds(emailPrefix, ipWindow);
+                    String emailKey = "ratelimit:" + prefix + ":email:" + email;
+                    emailResult = rateLimiterService.checkRateLimit(emailKey, emailLimit, emailWindow);
+                }
+
+                RateLimitResult effectiveResult;
+                if (!ipResult.allowed()) {
+                    effectiveResult = ipResult;
+                } else if (emailResult != null && !emailResult.allowed()) {
+                    effectiveResult = emailResult;
+                } else if (emailResult != null) {
+                    long minRemaining = Math.min(ipResult.remaining(), emailResult.remaining());
+                    long maxReset = Math.max(ipResult.resetTimestampEpochSeconds(), emailResult.resetTimestampEpochSeconds());
+                    effectiveResult = RateLimitResult.allowed(ipResult.limit(), minRemaining, maxReset);
+                } else {
+                    effectiveResult = ipResult;
+                }
+
+                response.setHeader("X-RateLimit-Limit", String.valueOf(effectiveResult.limit()));
+                response.setHeader("X-RateLimit-Remaining", String.valueOf(effectiveResult.remaining()));
+                response.setHeader("X-RateLimit-Reset", String.valueOf(effectiveResult.resetTimestampEpochSeconds()));
+
+                if (!effectiveResult.allowed()) {
+                    log.warn("Rate limit exceeded for endpoint '{}' (limit: {}, retryAfter: {}s)",
+                            prefix, effectiveResult.limit(), effectiveResult.retryAfterSeconds());
+                    throw new RateLimitExceededException(
+                            "Too many requests. Please try again in " + effectiveResult.retryAfterSeconds() + " seconds.",
+                            effectiveResult.retryAfterSeconds()
+                    );
+                }
+
+                return true;
             }
 
-            response.setHeader("X-RateLimit-Limit", String.valueOf(effectiveResult.limit()));
-            response.setHeader("X-RateLimit-Remaining", String.valueOf(effectiveResult.remaining()));
-            response.setHeader("X-RateLimit-Reset", String.valueOf(effectiveResult.resetTimestampEpochSeconds()));
+            int limit = resolveLimit(prefix, annotation != null ? annotation.limit() : DEFAULT_LIMIT);
+            int windowSeconds = resolveWindowSeconds(prefix, annotation != null ? annotation.windowSeconds() : DEFAULT_WINDOW_SECONDS);
 
-            if (!effectiveResult.allowed()) {
-                log.warn("Rate limit exceeded for endpoint '{}' (limit: {}, retryAfter: {}s)",
-                        prefix, effectiveResult.limit(), effectiveResult.retryAfterSeconds());
+            String identifier = resolveClientIdentifier(request, type);
+            String rateLimitKey = "ratelimit:" + prefix + ":" + identifier;
+
+            RateLimitResult result = rateLimiterService.checkRateLimit(rateLimitKey, limit, windowSeconds);
+
+            response.setHeader("X-RateLimit-Limit", String.valueOf(result.limit()));
+            response.setHeader("X-RateLimit-Remaining", String.valueOf(result.remaining()));
+            response.setHeader("X-RateLimit-Reset", String.valueOf(result.resetTimestampEpochSeconds()));
+
+            if (!result.allowed()) {
+                log.warn("Rate limit exceeded for key '{}' (limit: {}, window: {}s, retryAfter: {}s)",
+                        rateLimitKey, limit, windowSeconds, result.retryAfterSeconds());
                 throw new RateLimitExceededException(
-                        "Too many requests. Please try again in " + effectiveResult.retryAfterSeconds() + " seconds.",
-                        effectiveResult.retryAfterSeconds()
+                        "Too many requests. Please try again in " + result.retryAfterSeconds() + " seconds.",
+                        result.retryAfterSeconds()
                 );
             }
 
             return true;
+        } catch (RateLimitExceededException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("Rate limiter failed unexpectedly. Failing open to allow request. Reason: {}", e.getMessage());
+            return true;
         }
-
-        int limit = resolveLimit(prefix, annotation != null ? annotation.limit() : DEFAULT_LIMIT);
-        int windowSeconds = resolveWindowSeconds(prefix, annotation != null ? annotation.windowSeconds() : DEFAULT_WINDOW_SECONDS);
-
-        String identifier = resolveClientIdentifier(request, type);
-        String rateLimitKey = "ratelimit:" + prefix + ":" + identifier;
-
-        RateLimitResult result = rateLimiterService.checkRateLimit(rateLimitKey, limit, windowSeconds);
-
-        response.setHeader("X-RateLimit-Limit", String.valueOf(result.limit()));
-        response.setHeader("X-RateLimit-Remaining", String.valueOf(result.remaining()));
-        response.setHeader("X-RateLimit-Reset", String.valueOf(result.resetTimestampEpochSeconds()));
-
-        if (!result.allowed()) {
-            log.warn("Rate limit exceeded for key '{}' (limit: {}, window: {}s, retryAfter: {}s)",
-                    rateLimitKey, limit, windowSeconds, result.retryAfterSeconds());
-            throw new RateLimitExceededException(
-                    "Too many requests. Please try again in " + result.retryAfterSeconds() + " seconds.",
-                    result.retryAfterSeconds()
-            );
-        }
-
-        return true;
     }
 
     private int resolveLimit(String prefix, int fallbackLimit) {

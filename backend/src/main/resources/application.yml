@@ -46,7 +46,8 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      timeout: 2000ms
+      timeout: ${REDIS_TIMEOUT:1000ms}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:1000ms}
 
   mail:
     host: ${MAIL_HOST:sandbox.smtp.mailtrap.io}

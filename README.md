@@ -218,7 +218,7 @@ cd backend
 ```
 [INFO] Results:
 [INFO] 
-[INFO] Tests run: 140, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 267, Failures: 0, Errors: 0, Skipped: 0
 [INFO] 
 [INFO] BUILD SUCCESS
 ```
@@ -227,6 +227,30 @@ cd backend
 - **Scheduler Idempotency**: Proves background recurring expense runner never duplicates charges.
 - **Breach Detection Tests**: Simulates token theft and validates immediate token family invalidation.
 - **Brute-Force Integration Tests**: Validates that exceeding 5 rapid login attempts triggers HTTP 429.
+- **Resilience Tests**: Verifies zero hangs, fail-open rate limiting, and transparent PostgreSQL DB fallback during Redis outages.
+
+---
+
+## ⚖️ Known Limitations & Design Trade-offs
+
+Engineering a production-ready financial ledger requires deliberate architectural trade-offs between consistency, operational simplicity, and high availability. Below are three key design trade-offs in Settl and how they scale:
+
+### 1. 30-Second Cache Staleness Window (`group_balances`)
+- **Current Approach**: Group balances are cached in Redis under `group_balances:{groupId}` with a 30-second TTL. All 11 balance-altering operations (expenses, settlements, member changes, group updates, recurring generation, account deletions) trigger transaction-synchronized cache evictions *after commit*.
+- **Trade-off**: In edge cases where a network partition or Redis drop occurs immediately after database commit, stale balances could be served for up to 30 seconds before TTL expiration.
+- **Scale Evolution**: At higher scale with distributed multi-region replicas, transition to **write-through invalidation** or publish invalidation events via **Redis Pub/Sub / Kafka Debezium CDC**. For strict read-your-own-writes consistency, clients can pass a ledger version header (`ETag` / `If-None-Match`).
+
+### 2. Migration Indexing Strategy (`CREATE INDEX` vs. `CONCURRENTLY`)
+- **Current Approach**: Flyway migrations (`V1`–`V4`) run standard PostgreSQL `CREATE INDEX` during application startup to establish composite and partial indexes for hot query paths.
+- **Trade-off**: Standard `CREATE INDEX` acquires a `SHARE` lock on PostgreSQL tables, temporarily blocking concurrent writes while building the index. For local development, CI/CD, and small-to-mid databases, this guarantees transactional migration execution.
+- **Scale Evolution**: On enterprise tables with tens of millions of records, migrations must be executed out-of-band using `CREATE INDEX CONCURRENTLY` (outside transactional DDL blocks) or via blue-green database deployment pipelines to avoid write downtime.
+
+### 3. Redis Failure Mode & Rate Limiter Fail-Open Resiliency
+- **Current Approach**: Redis operations enforce explicit 1000ms socket connect and command timeouts (`LettuceClientConfigurationBuilderCustomizer`). If Redis becomes slow or unreachable:
+  - **Balance Cache**: Spring Cache's `CacheErrorHandler` intercepts Redis failures, logs a warning, and falls back directly to PostgreSQL aggregate queries without failing requests.
+  - **Rate Limiter**: The `@RateLimited` interceptor intentionally **fails open** (allowing requests through with warning logs) rather than failing closed with HTTP 503.
+- **Trade-off**: During an active Redis outage, application availability is prioritized over rate limiting. While password guessing is naturally throttled downstream by CPU-intensive BCrypt hashing (cost 12, ~300ms per attempt), network-level volumetric denial-of-service could bypass application limits.
+- **Scale Evolution**: In a tier-1 production environment, complement Redis rate limiting with an in-process local token bucket fallback (e.g. Caffeine / Bucket4j) as a circuit-breaker, or enforce edge-level rate limiting via Cloudflare / AWS WAF before traffic reaches application pods.
 
 ---
 
