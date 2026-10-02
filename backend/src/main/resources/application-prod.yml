@@ -21,6 +21,7 @@ app:
     refresh-secret: ${JWT_REFRESH_SECRET}
   cors:
     allowed-origins: ${APP_BASE_URL}
+  secure-cookies: ${SECURE_COOKIES:true}
 
 logging:
   level:

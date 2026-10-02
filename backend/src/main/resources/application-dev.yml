@@ -9,3 +9,6 @@ logging:
   level:
     com.settl.backend: DEBUG
     org.springframework.security: DEBUG
+
+app:
+  secure-cookies: ${SECURE_COOKIES:false}

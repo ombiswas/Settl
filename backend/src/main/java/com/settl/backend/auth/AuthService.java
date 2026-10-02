@@ -8,6 +8,7 @@ import com.settl.backend.auth.dto.ResendVerificationRequest;
 import com.settl.backend.auth.dto.UserDto;
 import com.settl.backend.auth.dto.VerifyEmailResponse;
 import com.settl.backend.common.ApiException;
+import com.settl.backend.common.CookieFactory;
 import com.settl.backend.user.User;
 import com.settl.backend.user.UserRepository;
 import com.settl.backend.audit.AuditAction;
@@ -46,7 +47,7 @@ public class AuthService {
 
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
-    public static final String REFRESH_COOKIE_NAME = "refresh_token";
+    public static final String REFRESH_COOKIE_NAME = CookieFactory.REFRESH_COOKIE_NAME;
 
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
@@ -56,6 +57,7 @@ public class AuthService {
     private final GroupInvitationRepository groupInvitationRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final AuditService auditService;
+    private final CookieFactory cookieFactory;
 
     @Value("${app.cors.allowed-origins:http://localhost:5173}")
     private String appBaseUrl;
@@ -72,7 +74,8 @@ public class AuthService {
             JwtService jwtService,
             GroupInvitationRepository groupInvitationRepository,
             GroupMemberRepository groupMemberRepository,
-            AuditService auditService
+            AuditService auditService,
+            CookieFactory cookieFactory
     ) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
@@ -82,6 +85,7 @@ public class AuthService {
         this.groupInvitationRepository = groupInvitationRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.auditService = auditService;
+        this.cookieFactory = cookieFactory;
     }
 
     public AuthService(
@@ -91,7 +95,7 @@ public class AuthService {
             EmailService emailService,
             JwtService jwtService
     ) {
-        this(userRepository, refreshTokenRepository, passwordEncoder, emailService, jwtService, null, null, null);
+        this(userRepository, refreshTokenRepository, passwordEncoder, emailService, jwtService, null, null, null, new CookieFactory(false));
     }
 
     public record LoginResult(AuthResponse authResponse, ResponseCookie refreshCookie) {}
@@ -308,17 +312,11 @@ public class AuthService {
                 log.info("Revoked refresh token for user id={}", token.getUser().getId());
             });
         }
-        return createRefreshTokenCookie("", 0);
+        return cookieFactory.createClearRefreshTokenCookie();
     }
 
     public ResponseCookie createRefreshTokenCookie(String token, long maxAgeSeconds) {
-        return ResponseCookie.from(REFRESH_COOKIE_NAME, token)
-                .httpOnly(true)
-                .secure(false) // Can be true in HTTPS/production
-                .path("/api/auth")
-                .maxAge(Duration.ofSeconds(maxAgeSeconds))
-                .sameSite("Strict")
-                .build();
+        return cookieFactory.createRefreshTokenCookie(token, maxAgeSeconds);
     }
 
     private String generateSecureToken() {

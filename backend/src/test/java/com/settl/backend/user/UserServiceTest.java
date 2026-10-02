@@ -5,6 +5,7 @@ import com.settl.backend.audit.AuditService;
 import com.settl.backend.auth.AuthService;
 import com.settl.backend.auth.RefreshTokenRepository;
 import com.settl.backend.common.ApiException;
+import com.settl.backend.common.CookieFactory;
 import com.settl.backend.expense.ExpenseRepository;
 import com.settl.backend.expense.ExpenseShareRepository;
 import com.settl.backend.group.Group;
@@ -31,6 +32,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -68,7 +70,6 @@ class UserServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
-    @InjectMocks
     private UserService userService;
 
     private User user;
@@ -76,6 +77,19 @@ class UserServiceTest {
 
     @BeforeEach
     void setUp() {
+        userService = new UserService(
+                userRepository,
+                groupRepository,
+                groupMemberRepository,
+                expenseRepository,
+                expenseShareRepository,
+                settlementRepository,
+                recurringExpenseRepository,
+                refreshTokenRepository,
+                auditService,
+                passwordEncoder,
+                new CookieFactory(false)
+        );
         userId = UUID.randomUUID();
         user = new User("alice@example.com", "encodedPassword", "Alice");
         user.setId(userId);

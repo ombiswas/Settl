@@ -15,5 +15,6 @@ app:
     refresh-secret: c2V0dGwtZGV2ZWxvcG1lbnQtYW5kLXRlc3QtcmVmcmVzaC1zZWNyZXQta2V5LW11c3QtYmUtYXQtbGVhc3QtMjU2LWJpdHMtbG9uZw==
     access-token-expiration-ms: 900000
     refresh-token-expiration-ms: 604800000
+  secure-cookies: ${SECURE_COOKIES:false}
 
  

@@ -5,6 +5,7 @@ import com.settl.backend.audit.AuditService;
 import com.settl.backend.auth.AuthService;
 import com.settl.backend.auth.RefreshTokenRepository;
 import com.settl.backend.common.ApiException;
+import com.settl.backend.common.CookieFactory;
 import com.settl.backend.expense.ExpenseRepository;
 import com.settl.backend.expense.ExpenseShareRepository;
 import com.settl.backend.group.Group;
@@ -45,6 +46,7 @@ public class UserService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final AuditService auditService;
     private final PasswordEncoder passwordEncoder;
+    private final CookieFactory cookieFactory;
 
     public UserService(
             UserRepository userRepository,
@@ -56,7 +58,8 @@ public class UserService {
             RecurringExpenseRepository recurringExpenseRepository,
             RefreshTokenRepository refreshTokenRepository,
             AuditService auditService,
-            PasswordEncoder passwordEncoder
+            PasswordEncoder passwordEncoder,
+            CookieFactory cookieFactory
     ) {
         this.userRepository = userRepository;
         this.groupRepository = groupRepository;
@@ -68,6 +71,7 @@ public class UserService {
         this.refreshTokenRepository = refreshTokenRepository;
         this.auditService = auditService;
         this.passwordEncoder = passwordEncoder;
+        this.cookieFactory = cookieFactory;
     }
 
     @Transactional
@@ -191,13 +195,7 @@ public class UserService {
         }
 
         // Clear refresh token cookie
-        return ResponseCookie.from(AuthService.REFRESH_COOKIE_NAME, "")
-                .httpOnly(true)
-                .secure(false)
-                .path("/api/auth")
-                .maxAge(Duration.ZERO)
-                .sameSite("Strict")
-                .build();
+        return cookieFactory.createClearRefreshTokenCookie();
     }
 
     public BigDecimal calculateUserBalanceInGroup(UUID groupId, UUID userId) {
