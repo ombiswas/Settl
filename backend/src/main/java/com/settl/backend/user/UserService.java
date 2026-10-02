@@ -2,6 +2,7 @@ package com.settl.backend.user;
 
 import com.settl.backend.audit.AuditAction;
 import com.settl.backend.audit.AuditService;
+import com.settl.backend.auth.AuthService;
 import com.settl.backend.auth.RefreshTokenRepository;
 import com.settl.backend.common.ApiException;
 import com.settl.backend.expense.ExpenseRepository;
@@ -33,7 +34,6 @@ import java.util.UUID;
 public class UserService {
 
     private static final Logger log = LoggerFactory.getLogger(UserService.class);
-    private static final String REFRESH_COOKIE_NAME = "settl_refresh_token";
 
     private final UserRepository userRepository;
     private final GroupRepository groupRepository;
@@ -191,7 +191,7 @@ public class UserService {
         }
 
         // Clear refresh token cookie
-        return ResponseCookie.from(REFRESH_COOKIE_NAME, "")
+        return ResponseCookie.from(AuthService.REFRESH_COOKIE_NAME, "")
                 .httpOnly(true)
                 .secure(false)
                 .path("/api/auth")

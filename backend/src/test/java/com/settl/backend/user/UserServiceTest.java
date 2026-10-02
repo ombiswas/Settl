@@ -2,6 +2,7 @@ package com.settl.backend.user;
 
 import com.settl.backend.audit.AuditAction;
 import com.settl.backend.audit.AuditService;
+import com.settl.backend.auth.AuthService;
 import com.settl.backend.auth.RefreshTokenRepository;
 import com.settl.backend.common.ApiException;
 import com.settl.backend.expense.ExpenseRepository;
@@ -181,6 +182,7 @@ class UserServiceTest {
 
         ResponseCookie cookie = userService.deleteAccount(userId, request);
 
+        assertThat(cookie.getName()).isEqualTo(AuthService.REFRESH_COOKIE_NAME);
         assertThat(cookie.getMaxAge().getSeconds()).isZero();
         verify(groupMemberRepository).deleteByGroupIdAndUserId(group.getId(), userId);
         verify(expenseRepository).deletePersonalExpensesByUserId(userId);
@@ -201,6 +203,7 @@ class UserServiceTest {
 
         ResponseCookie cookie = userService.deleteAccount(userId, request);
 
+        assertThat(cookie.getName()).isEqualTo(AuthService.REFRESH_COOKIE_NAME);
         assertThat(cookie.getMaxAge().getSeconds()).isZero();
         verify(userRepository, never()).deleteUserById(any());
         verify(userRepository).save(user);
