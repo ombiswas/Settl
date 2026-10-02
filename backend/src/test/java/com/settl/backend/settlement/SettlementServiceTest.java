@@ -142,4 +142,76 @@ class SettlementServiceTest {
                 .isInstanceOf(ApiException.class)
                 .hasMessageContaining("Recipient must be an active member");
     }
+
+    @Test
+    void recordSettlementWithNullAmountShouldThrowBadRequest() {
+        CreateSettlementRequest request = new CreateSettlementRequest(
+                bobId,
+                null,
+                "USD",
+                false
+        );
+
+        assertThatThrownBy(() -> settlementService.recordSettlement(groupId, aliceId, request))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> {
+                    ApiException apiEx = (ApiException) ex;
+                    assertThat(apiEx.getErrorCode()).isEqualTo("INVALID_AMOUNT");
+                    assertThat(apiEx.getMessage()).contains("Settlement amount must be greater than zero");
+                });
+    }
+
+    @Test
+    void recordSettlementWithZeroAmountShouldThrowBadRequest() {
+        CreateSettlementRequest request = new CreateSettlementRequest(
+                bobId,
+                BigDecimal.ZERO,
+                "USD",
+                false
+        );
+
+        assertThatThrownBy(() -> settlementService.recordSettlement(groupId, aliceId, request))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> {
+                    ApiException apiEx = (ApiException) ex;
+                    assertThat(apiEx.getErrorCode()).isEqualTo("INVALID_AMOUNT");
+                    assertThat(apiEx.getMessage()).contains("Settlement amount must be greater than zero");
+                });
+    }
+
+    @Test
+    void recordSettlementWithNegativeAmountShouldThrowBadRequest() {
+        CreateSettlementRequest request = new CreateSettlementRequest(
+                bobId,
+                new BigDecimal("-25.00"),
+                "USD",
+                false
+        );
+
+        assertThatThrownBy(() -> settlementService.recordSettlement(groupId, aliceId, request))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> {
+                    ApiException apiEx = (ApiException) ex;
+                    assertThat(apiEx.getErrorCode()).isEqualTo("INVALID_AMOUNT");
+                    assertThat(apiEx.getMessage()).contains("Settlement amount must be greater than zero");
+                });
+    }
+
+    @Test
+    void recordSettlementWithMoreThanTwoDecimalPlacesShouldThrowBadRequest() {
+        CreateSettlementRequest request = new CreateSettlementRequest(
+                bobId,
+                new BigDecimal("25.123"),
+                "USD",
+                false
+        );
+
+        assertThatThrownBy(() -> settlementService.recordSettlement(groupId, aliceId, request))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> {
+                    ApiException apiEx = (ApiException) ex;
+                    assertThat(apiEx.getErrorCode()).isEqualTo("INVALID_AMOUNT");
+                    assertThat(apiEx.getMessage()).contains("Settlement amount cannot have more than 2 decimal places");
+                });
+    }
 }

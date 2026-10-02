@@ -13,6 +13,7 @@ import com.settl.backend.user.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Currency;
 import java.util.HashMap;
@@ -45,6 +46,13 @@ public class SettlementService {
 
     @Transactional
     public SettlementResponse recordSettlement(UUID groupId, UUID callerId, CreateSettlementRequest request) {
+        if (request.amount() == null || request.amount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw ApiException.badRequest("Settlement amount must be greater than zero", "INVALID_AMOUNT");
+        }
+        if (request.amount().stripTrailingZeros().scale() > 2) {
+            throw ApiException.badRequest("Settlement amount cannot have more than 2 decimal places", "INVALID_AMOUNT");
+        }
+
         Group group = groupRepository.findById(groupId)
                 .orElseThrow(() -> ApiException.notFound("Group not found", "GROUP_NOT_FOUND"));
 

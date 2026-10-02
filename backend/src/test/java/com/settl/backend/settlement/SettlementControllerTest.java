@@ -154,4 +154,72 @@ class SettlementControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.content[?(@.action == 'SETTLEMENT_RECORDED')]").exists());
     }
+
+    @Test
+    void recordSettlementWithZeroAmountShouldReturnBadRequest() throws Exception {
+        CreateSettlementRequest settlementReq = new CreateSettlementRequest(
+                alice.getId(),
+                BigDecimal.ZERO,
+                "USD",
+                true
+        );
+
+        mockMvc.perform(post("/api/groups/" + testGroup.getId() + "/settlements")
+                        .header("Authorization", "Bearer " + bobToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(settlementReq)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    void recordSettlementWithNegativeAmountShouldReturnBadRequest() throws Exception {
+        CreateSettlementRequest settlementReq = new CreateSettlementRequest(
+                alice.getId(),
+                new BigDecimal("-50.00"),
+                "USD",
+                true
+        );
+
+        mockMvc.perform(post("/api/groups/" + testGroup.getId() + "/settlements")
+                        .header("Authorization", "Bearer " + bobToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(settlementReq)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    void recordSettlementWithNullAmountShouldReturnBadRequest() throws Exception {
+        CreateSettlementRequest settlementReq = new CreateSettlementRequest(
+                alice.getId(),
+                null,
+                "USD",
+                true
+        );
+
+        mockMvc.perform(post("/api/groups/" + testGroup.getId() + "/settlements")
+                        .header("Authorization", "Bearer " + bobToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(settlementReq)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    void recordSettlementWithMoreThanTwoDecimalPlacesShouldReturnBadRequest() throws Exception {
+        CreateSettlementRequest settlementReq = new CreateSettlementRequest(
+                alice.getId(),
+                new BigDecimal("50.123"),
+                "USD",
+                true
+        );
+
+        mockMvc.perform(post("/api/groups/" + testGroup.getId() + "/settlements")
+                        .header("Authorization", "Bearer " + bobToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(settlementReq)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
+    }
 }
