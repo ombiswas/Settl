@@ -318,4 +318,47 @@ class GroupServiceTest {
 
         verify(groupRepository, never()).save(any());
     }
+
+    @Test
+    void getUserGroups_WhenUserHasNoGroups_ReturnsEmptyListAndDoesNotQueryMembers() {
+        when(groupRepository.findGroupsByUserId(user1.getId())).thenReturn(List.of());
+
+        List<GroupResponse> result = groupService.getUserGroups(user1.getId());
+
+        assertThat(result).isEmpty();
+        verify(groupMemberRepository, never()).findByGroupIdInWithUser(any());
+        verify(groupMemberRepository, never()).findByGroupIdWithUser(any());
+    }
+
+    @Test
+    void getUserGroups_WhenUserInMultipleGroups_BatchesMemberFetchAndMapsCorrectly() {
+        Group group2 = new Group("Ski Weekend", "USD", user1);
+        group2.setId(UUID.randomUUID());
+
+        GroupMember gm1 = new GroupMember(group, user1, true);
+        GroupMember gm2 = new GroupMember(group, user2, false);
+        GroupMember gm3 = new GroupMember(group2, user1, true);
+
+        when(groupRepository.findGroupsByUserId(user1.getId())).thenReturn(List.of(group, group2));
+        when(groupMemberRepository.findByGroupIdInWithUser(List.of(group.getId(), group2.getId())))
+                .thenReturn(List.of(gm1, gm2, gm3));
+
+        List<GroupResponse> result = groupService.getUserGroups(user1.getId());
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).id()).isEqualTo(group.getId());
+        assertThat(result.get(0).members()).hasSize(2);
+        assertThat(result.get(0).memberCount()).isEqualTo(2);
+        assertThat(result.get(0).members().get(0).email()).isEqualTo(user1.getEmail());
+        assertThat(result.get(0).members().get(1).email()).isEqualTo(user2.getEmail());
+
+        assertThat(result.get(1).id()).isEqualTo(group2.getId());
+        assertThat(result.get(1).members()).hasSize(1);
+        assertThat(result.get(1).memberCount()).isEqualTo(1);
+        assertThat(result.get(1).members().get(0).email()).isEqualTo(user1.getEmail());
+
+        verify(groupMemberRepository).findByGroupIdInWithUser(List.of(group.getId(), group2.getId()));
+        verify(groupMemberRepository, never()).findByGroupIdWithUser(any());
+    }
 }
+

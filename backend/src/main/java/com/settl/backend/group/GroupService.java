@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class GroupService {
@@ -109,7 +110,19 @@ public class GroupService {
     @Transactional(readOnly = true)
     public List<GroupResponse> getUserGroups(UUID currentUserId) {
         List<Group> groups = groupRepository.findGroupsByUserId(currentUserId);
-        return groups.stream().map(this::mapToGroupResponse).toList();
+        if (groups.isEmpty()) {
+            return List.of();
+        }
+
+        List<UUID> groupIds = groups.stream().map(Group::getId).toList();
+        List<GroupMember> allMembers = groupMemberRepository.findByGroupIdInWithUser(groupIds);
+
+        Map<UUID, List<GroupMember>> membersByGroupId = allMembers.stream()
+                .collect(Collectors.groupingBy(gm -> gm.getId().getGroupId()));
+
+        return groups.stream()
+                .map(group -> mapToGroupResponse(group, membersByGroupId.getOrDefault(group.getId(), List.of())))
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -328,7 +341,11 @@ public class GroupService {
 
     private GroupResponse mapToGroupResponse(Group group) {
         List<GroupMember> members = groupMemberRepository.findByGroupIdWithUser(group.getId());
-        List<GroupMemberDto> memberDtos = members.stream()
+        return mapToGroupResponse(group, members);
+    }
+
+    private GroupResponse mapToGroupResponse(Group group, List<GroupMember> members) {
+        List<GroupMemberDto> memberDtos = (members != null ? members : List.<GroupMember>of()).stream()
                 .map(gm -> new GroupMemberDto(
                         gm.getUser().getId(),
                         gm.getUser().getEmail(),

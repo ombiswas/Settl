@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -21,6 +22,9 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, GroupM
 
     @Query("SELECT gm FROM GroupMember gm JOIN FETCH gm.user WHERE gm.id.groupId = :groupId ORDER BY gm.joinedAt ASC")
     List<GroupMember> findByGroupIdWithUser(@Param("groupId") UUID groupId);
+
+    @Query("SELECT gm FROM GroupMember gm JOIN FETCH gm.user WHERE gm.id.groupId IN :groupIds ORDER BY gm.id.groupId ASC, gm.joinedAt ASC")
+    List<GroupMember> findByGroupIdInWithUser(@Param("groupIds") Collection<UUID> groupIds);
 
     @Query("SELECT COUNT(gm) FROM GroupMember gm WHERE gm.id.groupId = :groupId AND gm.admin = true")
     long countAdminsInGroup(@Param("groupId") UUID groupId);
