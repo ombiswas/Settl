@@ -88,16 +88,6 @@ public class AuthService {
         this.cookieFactory = cookieFactory;
     }
 
-    public AuthService(
-            UserRepository userRepository,
-            RefreshTokenRepository refreshTokenRepository,
-            PasswordEncoder passwordEncoder,
-            EmailService emailService,
-            JwtService jwtService
-    ) {
-        this(userRepository, refreshTokenRepository, passwordEncoder, emailService, jwtService, null, null, null, new CookieFactory(false));
-    }
-
     public record LoginResult(AuthResponse authResponse, ResponseCookie refreshCookie) {}
 
     @Transactional

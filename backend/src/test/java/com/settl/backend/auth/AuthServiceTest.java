@@ -5,7 +5,11 @@ import com.settl.backend.auth.dto.RegisterRequest;
 import com.settl.backend.auth.dto.RegisterResponse;
 import com.settl.backend.auth.dto.ResendVerificationRequest;
 import com.settl.backend.auth.dto.VerifyEmailResponse;
+import com.settl.backend.audit.AuditService;
 import com.settl.backend.common.ApiException;
+import com.settl.backend.common.CookieFactory;
+import com.settl.backend.group.GroupInvitationRepository;
+import com.settl.backend.group.GroupMemberRepository;
 import com.settl.backend.user.User;
 import com.settl.backend.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,6 +50,16 @@ class AuthServiceTest {
     @Mock
     private EmailService emailService;
 
+    @Mock
+    private GroupInvitationRepository groupInvitationRepository;
+
+    @Mock
+    private GroupMemberRepository groupMemberRepository;
+
+    @Mock
+    private AuditService auditService;
+
+    private final CookieFactory cookieFactory = new CookieFactory(false);
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder(12);
     private JwtService jwtService;
     private AuthService authService;
@@ -54,7 +68,17 @@ class AuthServiceTest {
     void setUp() {
         String testSecret = Base64.getEncoder().encodeToString("very-secure-256-bit-secret-key-for-jwt-testing-12345678".getBytes());
         jwtService = new JwtService(testSecret, 900000);
-        authService = new AuthService(userRepository, refreshTokenRepository, passwordEncoder, emailService, jwtService);
+        authService = new AuthService(
+                userRepository,
+                refreshTokenRepository,
+                passwordEncoder,
+                emailService,
+                jwtService,
+                groupInvitationRepository,
+                groupMemberRepository,
+                auditService,
+                cookieFactory
+        );
         ReflectionTestUtils.setField(authService, "appBaseUrl", "http://localhost:5173");
         ReflectionTestUtils.setField(authService, "refreshTokenExpirationMs", 604800000L);
     }
