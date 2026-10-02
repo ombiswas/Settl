@@ -66,8 +66,8 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    @RateLimited(limit = 5, windowSeconds = 900, keyPrefix = "login", type = RateLimitType.IP)
-    @Operation(summary = "Log in user", description = "Authenticates credentials and returns a short-lived access token + httpOnly refresh token cookie (Limit: 5/15min/IP)")
+    @RateLimited(limit = 5, windowSeconds = 60, keyPrefix = "login", type = RateLimitType.IP_AND_EMAIL)
+    @Operation(summary = "Log in user", description = "Authenticates credentials and returns a short-lived access token + httpOnly refresh token cookie (Limit: 5/min/IP and 5/min/email)")
     public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody LoginRequest request) {
         AuthService.LoginResult result = authService.login(request);
         return ResponseEntity.ok()

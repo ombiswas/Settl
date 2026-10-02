@@ -7,6 +7,8 @@ import com.settl.backend.group.dto.AddMemberResponse;
 import com.settl.backend.group.dto.CreateGroupRequest;
 import com.settl.backend.group.dto.GroupResponse;
 import com.settl.backend.group.dto.UpdateGroupRequest;
+import com.settl.backend.common.ratelimit.RateLimited;
+import com.settl.backend.common.ratelimit.RateLimitType;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -80,7 +82,8 @@ public class GroupController {
     }
 
     @PostMapping("/{id}/members")
-    @Operation(summary = "Add member to group", description = "Adds a registered user by email or creates an invitation for an unregistered user. Caller must be group admin.")
+    @RateLimited(limit = 20, windowSeconds = 3600, keyPrefix = "invite", type = RateLimitType.USER_OR_IP)
+    @Operation(summary = "Add member to group", description = "Adds a registered user by email or creates an invitation for an unregistered user. Caller must be group admin. (Limit: 20/hour/user)")
     public ResponseEntity<ApiResponse<AddMemberResponse>> addMember(
             @PathVariable("id") UUID id,
             @Valid @RequestBody AddMemberRequest request,

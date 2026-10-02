@@ -10,6 +10,16 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Sliding-window rate limiter service backed by Redis and an atomic Lua script.
+ *
+ * <p><strong>Resiliency and Failure Mode (Fail-Open):</strong><br>
+ * If Redis becomes unavailable (e.g. connection timeout, node failure, network partition),
+ * this service deliberately <em>fails open</em>. It logs a warning with the target key
+ * and error reason, and returns {@link RateLimitResult#allowed(long, long, long)} to avoid
+ * a cascading denial-of-service for legitimate application users while downstream infrastructure
+ * recovers.
+ */
 @Service
 public class RateLimiterService {
 

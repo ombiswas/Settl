@@ -16,5 +16,24 @@ app:
     access-token-expiration-ms: 900000
     refresh-token-expiration-ms: 604800000
   secure-cookies: ${SECURE_COOKIES:false}
+  rate-limit:
+    login:
+      limit: ${RATE_LIMIT_LOGIN:5}
+      window-seconds: ${RATE_LIMIT_LOGIN_WINDOW:60}
+    login-email:
+      limit: ${RATE_LIMIT_LOGIN_EMAIL:5}
+      window-seconds: ${RATE_LIMIT_LOGIN_EMAIL_WINDOW:60}
+    resend-verification:
+      limit: ${RATE_LIMIT_RESEND:3}
+      window-seconds: ${RATE_LIMIT_RESEND_WINDOW:3600}
+    invite:
+      limit: ${RATE_LIMIT_INVITE:20}
+      window-seconds: ${RATE_LIMIT_INVITE_WINDOW:3600}
+    register:
+      limit: ${RATE_LIMIT_REGISTER:3}
+      window-seconds: ${RATE_LIMIT_REGISTER_WINDOW:3600}
+    delete-account:
+      limit: ${RATE_LIMIT_DELETE_ACCOUNT:3}
+      window-seconds: ${RATE_LIMIT_DELETE_ACCOUNT_WINDOW:900}
 
  

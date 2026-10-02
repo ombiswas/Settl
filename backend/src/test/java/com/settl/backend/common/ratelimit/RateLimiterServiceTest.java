@@ -67,5 +67,7 @@ class RateLimiterServiceTest {
 
         assertThat(result.allowed()).isTrue();
         assertThat(result.limit()).isEqualTo(10);
+        assertThat(result.remaining()).isEqualTo(9);
+        assertThat(result.retryAfterSeconds()).isEqualTo(0);
     }
 }
