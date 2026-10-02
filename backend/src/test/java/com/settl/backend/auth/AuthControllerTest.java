@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -22,6 +23,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Set;
 import java.util.TimeZone;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -58,6 +60,9 @@ class AuthControllerTest {
     @Autowired
     private JwtService jwtService;
 
+    @Autowired
+    private StringRedisTemplate redisTemplate;
+
     @MockBean
     private JavaMailSender javaMailSender;
 
@@ -65,6 +70,10 @@ class AuthControllerTest {
     void cleanDb() {
         refreshTokenRepository.deleteAll();
         userRepository.deleteAll();
+        Set<String> keys = redisTemplate.keys("ratelimit:*");
+        if (keys != null && !keys.isEmpty()) {
+            redisTemplate.delete(keys);
+        }
     }
 
     @Test

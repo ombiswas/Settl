@@ -500,6 +500,10 @@ public class GroupService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> ApiException.notFound("User not found", "USER_NOT_FOUND"));
 
+        if (!user.getEmail().equalsIgnoreCase(invitation.getEmail())) {
+            throw ApiException.forbidden("This invitation was not sent to your email", "INVITATION_EMAIL_MISMATCH");
+        }
+
         Group group = invitation.getGroup();
 
         if (!groupMemberRepository.existsByGroupIdAndUserId(group.getId(), user.getId())) {

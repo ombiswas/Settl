@@ -182,4 +182,103 @@ class InvitationControllerTest {
         GroupInvitation updatedInv = groupInvitationRepository.findById(invitation.getId()).orElseThrow();
         assertThat(updatedInv.getStatus()).isEqualTo(GroupInvitationStatus.ACCEPTED);
     }
+
+    @Test
+    void acceptInvitationWithMatchingEmailSucceeds() throws Exception {
+        String rawToken = "match_token_" + UUID.randomUUID();
+        String tokenHash = AuthService.hashToken(rawToken);
+        String targetEmail = "invited_user_" + UUID.randomUUID() + "@example.com";
+
+        GroupInvitation invitation = new GroupInvitation(
+                group,
+                targetEmail,
+                owner,
+                tokenHash,
+                false,
+                Instant.now().plus(7, ChronoUnit.DAYS)
+        );
+        groupInvitationRepository.save(invitation);
+
+        User invitee = new User(targetEmail, passwordEncoder.encode("Password123!"), "Invited User");
+        invitee.setEmailVerified(true);
+        invitee = userRepository.save(invitee);
+        String inviteeToken = jwtService.generateAccessToken(invitee);
+
+        mockMvc.perform(post("/api/invitations/accept?token=" + rawToken)
+                        .header("Authorization", "Bearer " + inviteeToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(group.getId().toString()));
+
+        assertThat(groupMemberRepository.existsByGroupIdAndUserId(group.getId(), invitee.getId())).isTrue();
+        GroupInvitation updated = groupInvitationRepository.findById(invitation.getId()).orElseThrow();
+        assertThat(updated.getStatus()).isEqualTo(GroupInvitationStatus.ACCEPTED);
+    }
+
+    @Test
+    void acceptInvitationWithDifferentEmailGetsForbiddenAndCreatesNoMember() throws Exception {
+        String rawToken = "mismatch_token_" + UUID.randomUUID();
+        String tokenHash = AuthService.hashToken(rawToken);
+        String targetEmail = "intended_recipient_" + UUID.randomUUID() + "@example.com";
+
+        GroupInvitation invitation = new GroupInvitation(
+                group,
+                targetEmail,
+                owner,
+                tokenHash,
+                false,
+                Instant.now().plus(7, ChronoUnit.DAYS)
+        );
+        groupInvitationRepository.save(invitation);
+
+        String attackerEmail = "attacker_" + UUID.randomUUID() + "@example.com";
+        User attacker = new User(attackerEmail, passwordEncoder.encode("Password123!"), "Attacker");
+        attacker.setEmailVerified(true);
+        attacker = userRepository.save(attacker);
+        String attackerToken = jwtService.generateAccessToken(attacker);
+
+        mockMvc.perform(post("/api/invitations/accept?token=" + rawToken)
+                        .header("Authorization", "Bearer " + attackerToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("INVITATION_EMAIL_MISMATCH"))
+                .andExpect(jsonPath("$.message").value("This invitation was not sent to your email"));
+
+        // Verify state is completely unchanged: no member created, invitation status stays PENDING
+        assertThat(groupMemberRepository.existsByGroupIdAndUserId(group.getId(), attacker.getId())).isFalse();
+        GroupInvitation unchanged = groupInvitationRepository.findById(invitation.getId()).orElseThrow();
+        assertThat(unchanged.getStatus()).isEqualTo(GroupInvitationStatus.PENDING);
+    }
+
+    @Test
+    void acceptInvitationWithCaseInsensitiveEmailSucceeds() throws Exception {
+        String rawToken = "case_token_" + UUID.randomUUID();
+        String tokenHash = AuthService.hashToken(rawToken);
+        String mixedCaseEmail = "MixedCase_" + UUID.randomUUID() + "@Example.COM";
+
+        GroupInvitation invitation = new GroupInvitation(
+                group,
+                mixedCaseEmail,
+                owner,
+                tokenHash,
+                false,
+                Instant.now().plus(7, ChronoUnit.DAYS)
+        );
+        groupInvitationRepository.save(invitation);
+
+        User user = new User(mixedCaseEmail.toLowerCase(), passwordEncoder.encode("Password123!"), "Case User");
+        user.setEmailVerified(true);
+        user = userRepository.save(user);
+        String userToken = jwtService.generateAccessToken(user);
+
+        mockMvc.perform(post("/api/invitations/accept?token=" + rawToken)
+                        .header("Authorization", "Bearer " + userToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(group.getId().toString()));
+
+        assertThat(groupMemberRepository.existsByGroupIdAndUserId(group.getId(), user.getId())).isTrue();
+        GroupInvitation updated = groupInvitationRepository.findById(invitation.getId()).orElseThrow();
+        assertThat(updated.getStatus()).isEqualTo(GroupInvitationStatus.ACCEPTED);
+    }
 }
