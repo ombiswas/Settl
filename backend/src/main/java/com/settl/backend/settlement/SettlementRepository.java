@@ -1,5 +1,6 @@
 package com.settl.backend.settlement;
 
+import com.settl.backend.settlement.dto.UserAmountDto;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -11,6 +12,14 @@ import java.util.UUID;
 
 @Repository
 public interface SettlementRepository extends JpaRepository<Settlement, UUID> {
+
+    @Query("SELECT new com.settl.backend.settlement.dto.UserAmountDto(s.fromUser.id, SUM(s.amount)) " +
+           "FROM Settlement s WHERE s.group.id = :groupId GROUP BY s.fromUser.id")
+    List<UserAmountDto> findTotalSettlementsPaidPerUserInGroup(@Param("groupId") UUID groupId);
+
+    @Query("SELECT new com.settl.backend.settlement.dto.UserAmountDto(s.toUser.id, SUM(s.amount)) " +
+           "FROM Settlement s WHERE s.group.id = :groupId GROUP BY s.toUser.id")
+    List<UserAmountDto> findTotalSettlementsReceivedPerUserInGroup(@Param("groupId") UUID groupId);
 
     @Query("SELECT COALESCE(SUM(s.amount), 0) FROM Settlement s WHERE s.group.id = :groupId AND s.fromUser.id = :userId")
     BigDecimal sumSettlementsPaidByUserIdInGroup(@Param("groupId") UUID groupId, @Param("userId") UUID userId);

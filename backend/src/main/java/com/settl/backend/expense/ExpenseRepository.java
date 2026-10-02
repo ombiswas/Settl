@@ -1,5 +1,6 @@
 package com.settl.backend.expense;
 
+import com.settl.backend.settlement.dto.UserAmountDto;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -13,6 +14,10 @@ import java.util.UUID;
 
 @Repository
 public interface ExpenseRepository extends JpaRepository<Expense, UUID> {
+
+    @Query("SELECT new com.settl.backend.settlement.dto.UserAmountDto(e.paidBy.id, SUM(e.amount)) " +
+           "FROM Expense e WHERE e.group.id = :groupId GROUP BY e.paidBy.id")
+    List<UserAmountDto> findTotalPaidPerUserInGroup(@Param("groupId") UUID groupId);
 
     @Query("SELECT COALESCE(SUM(e.amount), 0) FROM Expense e WHERE e.group.id = :groupId AND e.paidBy.id = :userId")
     BigDecimal sumPaidByUserIdInGroup(@Param("groupId") UUID groupId, @Param("userId") UUID userId);

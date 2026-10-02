@@ -11,6 +11,7 @@ import com.settl.backend.group.GroupRepository;
 import com.settl.backend.settlement.dto.GroupBalanceResponse;
 import com.settl.backend.settlement.dto.SuggestedSettlementDto;
 import com.settl.backend.settlement.dto.SuggestedSettlementsResponse;
+import com.settl.backend.settlement.dto.UserAmountDto;
 import com.settl.backend.settlement.dto.UserBalanceDto;
 import com.settl.backend.settlement.simplifier.DebtSimplifier;
 import com.settl.backend.settlement.simplifier.SimplifiedTransaction;
@@ -53,6 +54,58 @@ public class BalanceService {
         this.debtSimplifier = debtSimplifier;
     }
 
+    /**
+     * Calculates net balances for all members in a group using group-wide aggregate queries,
+     * avoiding the N+1 query problem.
+     *
+     * @param groupId Group UUID
+     * @return Map of userId -> netBalance (positive = owed money, negative = owes money)
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, BigDecimal> getGroupNetBalances(UUID groupId) {
+        Map<UUID, BigDecimal> paidMap = expenseRepository.findTotalPaidPerUserInGroup(groupId).stream()
+                .collect(Collectors.toMap(UserAmountDto::userId, UserAmountDto::amount));
+        Map<UUID, BigDecimal> owedMap = expenseShareRepository.findTotalOwedPerUserInGroup(groupId).stream()
+                .collect(Collectors.toMap(UserAmountDto::userId, UserAmountDto::amount));
+        Map<UUID, BigDecimal> settlementsPaidMap = settlementRepository.findTotalSettlementsPaidPerUserInGroup(groupId).stream()
+                .collect(Collectors.toMap(UserAmountDto::userId, UserAmountDto::amount));
+        Map<UUID, BigDecimal> settlementsReceivedMap = settlementRepository.findTotalSettlementsReceivedPerUserInGroup(groupId).stream()
+                .collect(Collectors.toMap(UserAmountDto::userId, UserAmountDto::amount));
+
+        List<GroupMember> members = groupMemberRepository.findByGroupIdWithUser(groupId);
+        Map<UUID, BigDecimal> netBalances = new HashMap<>();
+
+        for (GroupMember gm : members) {
+            UUID userId = gm.getUser().getId();
+            BigDecimal sumPaid = paidMap.getOrDefault(userId, BigDecimal.ZERO);
+            BigDecimal sumOwed = owedMap.getOrDefault(userId, BigDecimal.ZERO);
+            BigDecimal sumSettledPaid = settlementsPaidMap.getOrDefault(userId, BigDecimal.ZERO);
+            BigDecimal sumSettledReceived = settlementsReceivedMap.getOrDefault(userId, BigDecimal.ZERO);
+
+            BigDecimal netBalance = sumPaid.subtract(sumOwed)
+                    .add(sumSettledPaid)
+                    .subtract(sumSettledReceived)
+                    .setScale(2, RoundingMode.HALF_EVEN);
+
+            netBalances.put(userId, netBalance);
+        }
+
+        return netBalances;
+    }
+
+    /**
+     * Calculates balance for a single user in a group.
+     */
+    @Transactional(readOnly = true)
+    public BigDecimal calculateUserBalanceInGroup(UUID groupId, UUID userId) {
+        BigDecimal paid = expenseRepository.sumPaidByUserIdInGroup(groupId, userId);
+        BigDecimal owed = expenseShareRepository.sumOwedByUserIdInGroup(groupId, userId);
+        BigDecimal settlementsPaid = settlementRepository.sumSettlementsPaidByUserIdInGroup(groupId, userId);
+        BigDecimal settlementsReceived = settlementRepository.sumSettlementsReceivedByUserIdInGroup(groupId, userId);
+
+        return paid.subtract(owed).add(settlementsPaid).subtract(settlementsReceived).setScale(2, RoundingMode.HALF_EVEN);
+    }
+
     @Transactional(readOnly = true)
     public GroupBalanceResponse getGroupBalances(UUID groupId, UUID callerId) {
         Group group = groupRepository.findById(groupId)
@@ -63,7 +116,6 @@ public class BalanceService {
         }
 
         List<GroupMember> members = groupMemberRepository.findByGroupIdWithUser(groupId);
-        List<UserBalanceDto> balanceDtos = new ArrayList<>();
 
         BigDecimal totalGroupSpend = BigDecimal.ZERO;
         List<Expense> groupExpenses = expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId);
@@ -72,12 +124,22 @@ public class BalanceService {
         }
         totalGroupSpend = totalGroupSpend.setScale(2, RoundingMode.HALF_EVEN);
 
+        Map<UUID, BigDecimal> paidMap = expenseRepository.findTotalPaidPerUserInGroup(groupId).stream()
+                .collect(Collectors.toMap(UserAmountDto::userId, UserAmountDto::amount));
+        Map<UUID, BigDecimal> owedMap = expenseShareRepository.findTotalOwedPerUserInGroup(groupId).stream()
+                .collect(Collectors.toMap(UserAmountDto::userId, UserAmountDto::amount));
+        Map<UUID, BigDecimal> settlementsPaidMap = settlementRepository.findTotalSettlementsPaidPerUserInGroup(groupId).stream()
+                .collect(Collectors.toMap(UserAmountDto::userId, UserAmountDto::amount));
+        Map<UUID, BigDecimal> settlementsReceivedMap = settlementRepository.findTotalSettlementsReceivedPerUserInGroup(groupId).stream()
+                .collect(Collectors.toMap(UserAmountDto::userId, UserAmountDto::amount));
+
+        List<UserBalanceDto> balanceDtos = new ArrayList<>();
         for (GroupMember gm : members) {
             User user = gm.getUser();
-            BigDecimal sumPaid = expenseRepository.sumPaidByUserIdInGroup(groupId, user.getId());
-            BigDecimal sumOwed = expenseShareRepository.sumOwedByUserIdInGroup(groupId, user.getId());
-            BigDecimal sumSettledPaid = settlementRepository.sumSettlementsPaidByUserIdInGroup(groupId, user.getId());
-            BigDecimal sumSettledReceived = settlementRepository.sumSettlementsReceivedByUserIdInGroup(groupId, user.getId());
+            BigDecimal sumPaid = paidMap.getOrDefault(user.getId(), BigDecimal.ZERO);
+            BigDecimal sumOwed = owedMap.getOrDefault(user.getId(), BigDecimal.ZERO);
+            BigDecimal sumSettledPaid = settlementsPaidMap.getOrDefault(user.getId(), BigDecimal.ZERO);
+            BigDecimal sumSettledReceived = settlementsReceivedMap.getOrDefault(user.getId(), BigDecimal.ZERO);
 
             BigDecimal netBalance = sumPaid.subtract(sumOwed)
                     .add(sumSettledPaid)
@@ -125,21 +187,7 @@ public class BalanceService {
         List<GroupMember> members = groupMemberRepository.findByGroupIdWithUser(groupId);
         Map<UUID, User> userMap = members.stream().collect(Collectors.toMap(gm -> gm.getUser().getId(), GroupMember::getUser));
 
-        Map<UUID, BigDecimal> netBalances = new HashMap<>();
-        for (GroupMember gm : members) {
-            UUID userId = gm.getUser().getId();
-            BigDecimal sumPaid = expenseRepository.sumPaidByUserIdInGroup(groupId, userId);
-            BigDecimal sumOwed = expenseShareRepository.sumOwedByUserIdInGroup(groupId, userId);
-            BigDecimal sumSettledPaid = settlementRepository.sumSettlementsPaidByUserIdInGroup(groupId, userId);
-            BigDecimal sumSettledReceived = settlementRepository.sumSettlementsReceivedByUserIdInGroup(groupId, userId);
-
-            BigDecimal netBalance = sumPaid.subtract(sumOwed)
-                    .add(sumSettledPaid)
-                    .subtract(sumSettledReceived)
-                    .setScale(2, RoundingMode.HALF_EVEN);
-
-            netBalances.put(userId, netBalance);
-        }
+        Map<UUID, BigDecimal> netBalances = getGroupNetBalances(groupId);
 
         List<SimplifiedTransaction> simplified = debtSimplifier.simplify(netBalances);
 

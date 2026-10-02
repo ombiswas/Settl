@@ -6,9 +6,10 @@ import com.settl.backend.expense.ExpenseShareRepository;
 import com.settl.backend.group.dto.AddMemberRequest;
 import com.settl.backend.group.dto.AddMemberResponse;
 import com.settl.backend.group.dto.CreateGroupRequest;
+import com.settl.backend.group.dto.GroupMemberDto;
 import com.settl.backend.group.dto.GroupResponse;
 import com.settl.backend.group.dto.UpdateGroupRequest;
-import com.settl.backend.settlement.SettlementRepository;
+import com.settl.backend.settlement.BalanceService;
 import com.settl.backend.user.User;
 import com.settl.backend.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +22,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -45,13 +47,7 @@ class GroupServiceTest {
     private UserRepository userRepository;
 
     @Mock
-    private ExpenseRepository expenseRepository;
-
-    @Mock
-    private ExpenseShareRepository expenseShareRepository;
-
-    @Mock
-    private SettlementRepository settlementRepository;
+    private BalanceService balanceService;
 
     @Mock
     private com.settl.backend.audit.AuditService auditService;
@@ -187,10 +183,7 @@ class GroupServiceTest {
         when(groupMemberRepository.findByGroupIdAndUserId(group.getId(), user2.getId())).thenReturn(Optional.of(targetMember));
 
         // User2 owes 50.00 EUR
-        when(expenseRepository.sumPaidByUserIdInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
-        when(expenseShareRepository.sumOwedByUserIdInGroup(group.getId(), user2.getId())).thenReturn(new BigDecimal("50.00"));
-        when(settlementRepository.sumSettlementsPaidByUserIdInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
-        when(settlementRepository.sumSettlementsReceivedByUserIdInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
+        when(balanceService.calculateUserBalanceInGroup(group.getId(), user2.getId())).thenReturn(new BigDecimal("-50.00"));
 
         assertThatThrownBy(() -> groupService.removeMember(group.getId(), user2.getId(), user1.getId()))
                 .isInstanceOf(ApiException.class)
@@ -208,10 +201,7 @@ class GroupServiceTest {
         when(groupMemberRepository.findByGroupIdAndUserId(group.getId(), user1.getId())).thenReturn(Optional.of(adminMember));
         when(groupMemberRepository.findByGroupIdAndUserId(group.getId(), user2.getId())).thenReturn(Optional.of(targetMember));
 
-        when(expenseRepository.sumPaidByUserIdInGroup(group.getId(), user2.getId())).thenReturn(new BigDecimal("100.00"));
-        when(expenseShareRepository.sumOwedByUserIdInGroup(group.getId(), user2.getId())).thenReturn(new BigDecimal("100.00"));
-        when(settlementRepository.sumSettlementsPaidByUserIdInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
-        when(settlementRepository.sumSettlementsReceivedByUserIdInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
+        when(balanceService.calculateUserBalanceInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
 
         groupService.removeMember(group.getId(), user2.getId(), user1.getId());
 
@@ -250,19 +240,11 @@ class GroupServiceTest {
 
         when(groupRepository.findById(group.getId())).thenReturn(Optional.of(group));
         when(groupMemberRepository.findByGroupIdAndUserId(group.getId(), user1.getId())).thenReturn(Optional.of(adminMember));
-        when(groupMemberRepository.findByGroupIdWithUser(group.getId())).thenReturn(List.of(adminMember, targetMember));
 
-        // user1 has balance 0
-        when(expenseRepository.sumPaidByUserIdInGroup(group.getId(), user1.getId())).thenReturn(BigDecimal.ZERO);
-        when(expenseShareRepository.sumOwedByUserIdInGroup(group.getId(), user1.getId())).thenReturn(BigDecimal.ZERO);
-        when(settlementRepository.sumSettlementsPaidByUserIdInGroup(group.getId(), user1.getId())).thenReturn(BigDecimal.ZERO);
-        when(settlementRepository.sumSettlementsReceivedByUserIdInGroup(group.getId(), user1.getId())).thenReturn(BigDecimal.ZERO);
-
-        // user2 owes 45.00 EUR
-        when(expenseRepository.sumPaidByUserIdInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
-        when(expenseShareRepository.sumOwedByUserIdInGroup(group.getId(), user2.getId())).thenReturn(new BigDecimal("45.00"));
-        when(settlementRepository.sumSettlementsPaidByUserIdInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
-        when(settlementRepository.sumSettlementsReceivedByUserIdInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
+        when(balanceService.getGroupNetBalances(group.getId())).thenReturn(Map.of(
+                user1.getId(), BigDecimal.ZERO,
+                user2.getId(), new BigDecimal("-45.00")
+        ));
 
         assertThatThrownBy(() -> groupService.deleteGroup(group.getId(), user1.getId()))
                 .isInstanceOf(ApiException.class)
@@ -278,18 +260,11 @@ class GroupServiceTest {
 
         when(groupRepository.findById(group.getId())).thenReturn(Optional.of(group));
         when(groupMemberRepository.findByGroupIdAndUserId(group.getId(), user1.getId())).thenReturn(Optional.of(adminMember));
-        when(groupMemberRepository.findByGroupIdWithUser(group.getId())).thenReturn(List.of(adminMember, targetMember));
 
-        // Both have zero balances
-        when(expenseRepository.sumPaidByUserIdInGroup(group.getId(), user1.getId())).thenReturn(new BigDecimal("50.00"));
-        when(expenseShareRepository.sumOwedByUserIdInGroup(group.getId(), user1.getId())).thenReturn(new BigDecimal("50.00"));
-        when(settlementRepository.sumSettlementsPaidByUserIdInGroup(group.getId(), user1.getId())).thenReturn(BigDecimal.ZERO);
-        when(settlementRepository.sumSettlementsReceivedByUserIdInGroup(group.getId(), user1.getId())).thenReturn(BigDecimal.ZERO);
-
-        when(expenseRepository.sumPaidByUserIdInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
-        when(expenseShareRepository.sumOwedByUserIdInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
-        when(settlementRepository.sumSettlementsPaidByUserIdInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
-        when(settlementRepository.sumSettlementsReceivedByUserIdInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
+        when(balanceService.getGroupNetBalances(group.getId())).thenReturn(Map.of(
+                user1.getId(), BigDecimal.ZERO,
+                user2.getId(), BigDecimal.ZERO
+        ));
 
         groupService.deleteGroup(group.getId(), user1.getId());
 

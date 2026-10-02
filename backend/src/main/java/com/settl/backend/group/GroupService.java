@@ -3,15 +3,13 @@ package com.settl.backend.group;
 import com.settl.backend.audit.AuditAction;
 import com.settl.backend.audit.AuditService;
 import com.settl.backend.common.ApiException;
-import com.settl.backend.expense.ExpenseRepository;
-import com.settl.backend.expense.ExpenseShareRepository;
 import com.settl.backend.group.dto.AddMemberRequest;
 import com.settl.backend.group.dto.AddMemberResponse;
 import com.settl.backend.group.dto.CreateGroupRequest;
 import com.settl.backend.group.dto.GroupMemberDto;
 import com.settl.backend.group.dto.GroupResponse;
 import com.settl.backend.group.dto.UpdateGroupRequest;
-import com.settl.backend.settlement.SettlementRepository;
+import com.settl.backend.settlement.BalanceService;
 import com.settl.backend.user.User;
 import com.settl.backend.user.UserRepository;
 import com.settl.backend.auth.AuthService;
@@ -44,9 +42,7 @@ public class GroupService {
     private final GroupMemberRepository groupMemberRepository;
     private final GroupInvitationRepository groupInvitationRepository;
     private final UserRepository userRepository;
-    private final ExpenseRepository expenseRepository;
-    private final ExpenseShareRepository expenseShareRepository;
-    private final SettlementRepository settlementRepository;
+    private final BalanceService balanceService;
     private final AuditService auditService;
     private final com.settl.backend.auth.EmailService emailService;
 
@@ -58,9 +54,7 @@ public class GroupService {
             GroupMemberRepository groupMemberRepository,
             GroupInvitationRepository groupInvitationRepository,
             UserRepository userRepository,
-            ExpenseRepository expenseRepository,
-            ExpenseShareRepository expenseShareRepository,
-            SettlementRepository settlementRepository,
+            BalanceService balanceService,
             AuditService auditService,
             com.settl.backend.auth.EmailService emailService
     ) {
@@ -68,9 +62,7 @@ public class GroupService {
         this.groupMemberRepository = groupMemberRepository;
         this.groupInvitationRepository = groupInvitationRepository;
         this.userRepository = userRepository;
-        this.expenseRepository = expenseRepository;
-        this.expenseShareRepository = expenseShareRepository;
-        this.settlementRepository = settlementRepository;
+        this.balanceService = balanceService;
         this.auditService = auditService;
         this.emailService = emailService;
     }
@@ -274,7 +266,7 @@ public class GroupService {
         }
 
         // Guard: Check if target member has a non-zero balance
-        BigDecimal balance = calculateUserBalanceInGroup(groupId, targetUserId);
+        BigDecimal balance = balanceService.calculateUserBalanceInGroup(groupId, targetUserId);
         if (balance.abs().compareTo(new BigDecimal("0.005")) >= 0) {
             throw ApiException.badRequest(
                     "Cannot remove member with non-zero balance (" + balance.toPlainString() + " " + group.getDefaultCurrency() + "). All debts must be settled first.",
@@ -319,9 +311,8 @@ public class GroupService {
         }
 
         // Guard: Check if any member has an unsettled non-zero balance
-        List<GroupMember> members = groupMemberRepository.findByGroupIdWithUser(groupId);
-        for (GroupMember member : members) {
-            BigDecimal balance = calculateUserBalanceInGroup(groupId, member.getUser().getId());
+        Map<UUID, BigDecimal> netBalances = balanceService.getGroupNetBalances(groupId);
+        for (BigDecimal balance : netBalances.values()) {
             if (balance.abs().compareTo(new BigDecimal("0.005")) >= 0) {
                 throw ApiException.badRequest(
                         "Cannot delete group with unsettled balances. All member debts must be settled first.",
@@ -333,15 +324,6 @@ public class GroupService {
         groupMemberRepository.deleteAllByGroupId(groupId);
         groupRepository.deleteGroupById(groupId);
         log.info("Group '{}' (id={}) deleted by admin user id={}", group.getName(), groupId, currentUserId);
-    }
-
-    public BigDecimal calculateUserBalanceInGroup(UUID groupId, UUID userId) {
-        BigDecimal paid = expenseRepository.sumPaidByUserIdInGroup(groupId, userId);
-        BigDecimal owed = expenseShareRepository.sumOwedByUserIdInGroup(groupId, userId);
-        BigDecimal settlementsPaid = settlementRepository.sumSettlementsPaidByUserIdInGroup(groupId, userId);
-        BigDecimal settlementsReceived = settlementRepository.sumSettlementsReceivedByUserIdInGroup(groupId, userId);
-
-        return paid.subtract(owed).add(settlementsPaid).subtract(settlementsReceived);
     }
 
     private GroupResponse mapToGroupResponse(Group group) {

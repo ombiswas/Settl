@@ -14,6 +14,7 @@ import com.settl.backend.group.GroupMemberRepository;
 import com.settl.backend.group.GroupRepository;
 import com.settl.backend.group.GroupService;
 import com.settl.backend.recurring.RecurringExpenseRepository;
+import com.settl.backend.settlement.BalanceService;
 import com.settl.backend.settlement.SettlementRepository;
 import com.settl.backend.user.dto.DeleteAccountRequest;
 import org.slf4j.Logger;
@@ -42,6 +43,7 @@ public class UserService {
     private final ExpenseRepository expenseRepository;
     private final ExpenseShareRepository expenseShareRepository;
     private final SettlementRepository settlementRepository;
+    private final BalanceService balanceService;
     private final RecurringExpenseRepository recurringExpenseRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final AuditService auditService;
@@ -55,6 +57,7 @@ public class UserService {
             ExpenseRepository expenseRepository,
             ExpenseShareRepository expenseShareRepository,
             SettlementRepository settlementRepository,
+            BalanceService balanceService,
             RecurringExpenseRepository recurringExpenseRepository,
             RefreshTokenRepository refreshTokenRepository,
             AuditService auditService,
@@ -67,6 +70,7 @@ public class UserService {
         this.expenseRepository = expenseRepository;
         this.expenseShareRepository = expenseShareRepository;
         this.settlementRepository = settlementRepository;
+        this.balanceService = balanceService;
         this.recurringExpenseRepository = recurringExpenseRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.auditService = auditService;
@@ -102,7 +106,7 @@ public class UserService {
             UUID groupId = group.getId();
 
             // Check balance in group
-            BigDecimal balance = calculateUserBalanceInGroup(groupId, userId);
+            BigDecimal balance = balanceService.calculateUserBalanceInGroup(groupId, userId);
             if (balance.abs().compareTo(new BigDecimal("0.005")) >= 0) {
                 String formatted = balance.compareTo(BigDecimal.ZERO) > 0
                         ? "+" + balance.toPlainString()
@@ -196,14 +200,5 @@ public class UserService {
 
         // Clear refresh token cookie
         return cookieFactory.createClearRefreshTokenCookie();
-    }
-
-    public BigDecimal calculateUserBalanceInGroup(UUID groupId, UUID userId) {
-        BigDecimal paid = expenseRepository.sumPaidByUserIdInGroup(groupId, userId);
-        BigDecimal owed = expenseShareRepository.sumOwedByUserIdInGroup(groupId, userId);
-        BigDecimal settlementsPaid = settlementRepository.sumSettlementsPaidByUserIdInGroup(groupId, userId);
-        BigDecimal settlementsReceived = settlementRepository.sumSettlementsReceivedByUserIdInGroup(groupId, userId);
-
-        return paid.subtract(owed).add(settlementsPaid).subtract(settlementsReceived);
     }
 }

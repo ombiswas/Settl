@@ -13,6 +13,7 @@ import com.settl.backend.group.GroupMember;
 import com.settl.backend.group.GroupMemberRepository;
 import com.settl.backend.group.GroupRepository;
 import com.settl.backend.recurring.RecurringExpenseRepository;
+import com.settl.backend.settlement.BalanceService;
 import com.settl.backend.settlement.SettlementRepository;
 import com.settl.backend.user.dto.DeleteAccountRequest;
 import org.junit.jupiter.api.BeforeEach;
@@ -59,6 +60,9 @@ class UserServiceTest {
     private SettlementRepository settlementRepository;
 
     @Mock
+    private BalanceService balanceService;
+
+    @Mock
     private RecurringExpenseRepository recurringExpenseRepository;
 
     @Mock
@@ -84,6 +88,7 @@ class UserServiceTest {
                 expenseRepository,
                 expenseShareRepository,
                 settlementRepository,
+                balanceService,
                 recurringExpenseRepository,
                 refreshTokenRepository,
                 auditService,
@@ -96,10 +101,7 @@ class UserServiceTest {
     }
 
     private void mockZeroBalance(UUID groupId, UUID targetUserId) {
-        when(expenseRepository.sumPaidByUserIdInGroup(groupId, targetUserId)).thenReturn(BigDecimal.ZERO);
-        when(expenseShareRepository.sumOwedByUserIdInGroup(groupId, targetUserId)).thenReturn(BigDecimal.ZERO);
-        when(settlementRepository.sumSettlementsPaidByUserIdInGroup(groupId, targetUserId)).thenReturn(BigDecimal.ZERO);
-        when(settlementRepository.sumSettlementsReceivedByUserIdInGroup(groupId, targetUserId)).thenReturn(BigDecimal.ZERO);
+        when(balanceService.calculateUserBalanceInGroup(groupId, targetUserId)).thenReturn(BigDecimal.ZERO);
     }
 
     @Test
@@ -139,10 +141,7 @@ class UserServiceTest {
         GroupMember gm = new GroupMember(group, user, false);
 
         when(groupMemberRepository.findAllByUserIdWithGroup(userId)).thenReturn(List.of(gm));
-        when(expenseRepository.sumPaidByUserIdInGroup(group.getId(), userId)).thenReturn(BigDecimal.ZERO);
-        when(expenseShareRepository.sumOwedByUserIdInGroup(group.getId(), userId)).thenReturn(new BigDecimal("25.50"));
-        when(settlementRepository.sumSettlementsPaidByUserIdInGroup(group.getId(), userId)).thenReturn(BigDecimal.ZERO);
-        when(settlementRepository.sumSettlementsReceivedByUserIdInGroup(group.getId(), userId)).thenReturn(BigDecimal.ZERO);
+        when(balanceService.calculateUserBalanceInGroup(group.getId(), userId)).thenReturn(new BigDecimal("-25.50"));
 
         assertThatThrownBy(() -> userService.deleteAccount(userId, request))
                 .isInstanceOf(ApiException.class)

@@ -93,17 +93,15 @@ class BalanceServiceTest {
         Expense exp = new Expense(testGroup, alice, "Dinner", new BigDecimal("100.00"), "USD", ExpenseCategory.FOOD_AND_DINING, SplitType.EQUAL, null);
         when(expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId)).thenReturn(List.of(exp));
 
-        // Alice paid 100, owes 50 -> net +50 (IS_OWED)
-        when(expenseRepository.sumPaidByUserIdInGroup(groupId, aliceId)).thenReturn(new BigDecimal("100.00"));
-        when(expenseShareRepository.sumOwedByUserIdInGroup(groupId, aliceId)).thenReturn(new BigDecimal("50.00"));
-        when(settlementRepository.sumSettlementsPaidByUserIdInGroup(groupId, aliceId)).thenReturn(BigDecimal.ZERO);
-        when(settlementRepository.sumSettlementsReceivedByUserIdInGroup(groupId, aliceId)).thenReturn(BigDecimal.ZERO);
-
-        // Bob paid 0, owes 50 -> net -50 (OWES)
-        when(expenseRepository.sumPaidByUserIdInGroup(groupId, bobId)).thenReturn(BigDecimal.ZERO);
-        when(expenseShareRepository.sumOwedByUserIdInGroup(groupId, bobId)).thenReturn(new BigDecimal("50.00"));
-        when(settlementRepository.sumSettlementsPaidByUserIdInGroup(groupId, bobId)).thenReturn(BigDecimal.ZERO);
-        when(settlementRepository.sumSettlementsReceivedByUserIdInGroup(groupId, bobId)).thenReturn(BigDecimal.ZERO);
+        when(expenseRepository.findTotalPaidPerUserInGroup(groupId))
+                .thenReturn(List.of(new com.settl.backend.settlement.dto.UserAmountDto(aliceId, new BigDecimal("100.00"))));
+        when(expenseShareRepository.findTotalOwedPerUserInGroup(groupId))
+                .thenReturn(List.of(
+                        new com.settl.backend.settlement.dto.UserAmountDto(aliceId, new BigDecimal("50.00")),
+                        new com.settl.backend.settlement.dto.UserAmountDto(bobId, new BigDecimal("50.00"))
+                ));
+        when(settlementRepository.findTotalSettlementsPaidPerUserInGroup(groupId)).thenReturn(List.of());
+        when(settlementRepository.findTotalSettlementsReceivedPerUserInGroup(groupId)).thenReturn(List.of());
 
         GroupBalanceResponse response = balanceService.getGroupBalances(groupId, aliceId);
 
@@ -128,15 +126,15 @@ class BalanceServiceTest {
         GroupMember gm2 = new GroupMember(testGroup, bob, false);
         when(groupMemberRepository.findByGroupIdWithUser(groupId)).thenReturn(List.of(gm1, gm2));
 
-        when(expenseRepository.sumPaidByUserIdInGroup(groupId, aliceId)).thenReturn(new BigDecimal("100.00"));
-        when(expenseShareRepository.sumOwedByUserIdInGroup(groupId, aliceId)).thenReturn(new BigDecimal("50.00"));
-        when(settlementRepository.sumSettlementsPaidByUserIdInGroup(groupId, aliceId)).thenReturn(BigDecimal.ZERO);
-        when(settlementRepository.sumSettlementsReceivedByUserIdInGroup(groupId, aliceId)).thenReturn(BigDecimal.ZERO);
-
-        when(expenseRepository.sumPaidByUserIdInGroup(groupId, bobId)).thenReturn(BigDecimal.ZERO);
-        when(expenseShareRepository.sumOwedByUserIdInGroup(groupId, bobId)).thenReturn(new BigDecimal("50.00"));
-        when(settlementRepository.sumSettlementsPaidByUserIdInGroup(groupId, bobId)).thenReturn(BigDecimal.ZERO);
-        when(settlementRepository.sumSettlementsReceivedByUserIdInGroup(groupId, bobId)).thenReturn(BigDecimal.ZERO);
+        when(expenseRepository.findTotalPaidPerUserInGroup(groupId))
+                .thenReturn(List.of(new com.settl.backend.settlement.dto.UserAmountDto(aliceId, new BigDecimal("100.00"))));
+        when(expenseShareRepository.findTotalOwedPerUserInGroup(groupId))
+                .thenReturn(List.of(
+                        new com.settl.backend.settlement.dto.UserAmountDto(aliceId, new BigDecimal("50.00")),
+                        new com.settl.backend.settlement.dto.UserAmountDto(bobId, new BigDecimal("50.00"))
+                ));
+        when(settlementRepository.findTotalSettlementsPaidPerUserInGroup(groupId)).thenReturn(List.of());
+        when(settlementRepository.findTotalSettlementsReceivedPerUserInGroup(groupId)).thenReturn(List.of());
 
         SuggestedSettlementsResponse response = balanceService.getSuggestedSettlements(groupId, aliceId);
 
