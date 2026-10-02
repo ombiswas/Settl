@@ -8,7 +8,7 @@ spring:
     name: settl-backend
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5435/expense_splitter?options=-c%20timezone=UTC}
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/settl?options=-c%20timezone=UTC}
     username: ${DB_USER:postgres}
     password: ${DB_PASSWORD:changeme}
     driver-class-name: org.postgresql.Driver
@@ -70,3 +70,5 @@ springdoc:
     path: /swagger-ui.html
     operationsSorter: method
     tagsSorter: alpha
+
+
