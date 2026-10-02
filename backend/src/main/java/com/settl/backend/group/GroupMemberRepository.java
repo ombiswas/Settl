@@ -31,7 +31,15 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, GroupM
     @Query("SELECT gm FROM GroupMember gm JOIN FETCH gm.group WHERE gm.id.userId = :userId")
     List<GroupMember> findAllByUserIdWithGroup(@Param("userId") UUID userId);
 
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("DELETE FROM GroupMember gm WHERE gm.id.groupId = :groupId AND gm.id.userId = :userId")
     void deleteByGroupIdAndUserId(@Param("groupId") UUID groupId, @Param("userId") UUID userId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM GroupMember gm WHERE gm.id.groupId = :groupId")
+    void deleteAllByGroupId(@Param("groupId") UUID groupId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM GroupMember gm WHERE gm.id.userId = :userId")
+    void deleteAllByUserId(@Param("userId") UUID userId);
 }

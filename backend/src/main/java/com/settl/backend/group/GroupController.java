@@ -6,6 +6,7 @@ import com.settl.backend.group.dto.AddMemberRequest;
 import com.settl.backend.group.dto.AddMemberResponse;
 import com.settl.backend.group.dto.CreateGroupRequest;
 import com.settl.backend.group.dto.GroupResponse;
+import com.settl.backend.group.dto.UpdateGroupRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -66,6 +68,17 @@ public class GroupController {
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
+    @PutMapping("/{id}")
+    @Operation(summary = "Update group details", description = "Updates group name and/or default currency. Caller must be group admin.")
+    public ResponseEntity<ApiResponse<GroupResponse>> updateGroup(
+            @PathVariable("id") UUID id,
+            @Valid @RequestBody UpdateGroupRequest request,
+            @AuthenticationPrincipal CustomUserPrincipal principal
+    ) {
+        GroupResponse response = groupService.updateGroup(id, request, principal.id());
+        return ResponseEntity.ok(ApiResponse.success(response, "Group updated successfully"));
+    }
+
     @PostMapping("/{id}/members")
     @Operation(summary = "Add member to group", description = "Adds a registered user by email or creates an invitation for an unregistered user. Caller must be group admin.")
     public ResponseEntity<ApiResponse<AddMemberResponse>> addMember(
@@ -86,5 +99,47 @@ public class GroupController {
     ) {
         groupService.removeMember(id, userId, principal.id());
         return ResponseEntity.ok(ApiResponse.success(null, "Member removed successfully"));
+    }
+
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Delete group", description = "Permanently deletes a group and cascades deletion to all expenses, settlements, and recurring schedules. Guarded by admin check and zero-balance requirement across all members.")
+    public ResponseEntity<ApiResponse<Void>> deleteGroup(
+            @PathVariable("id") UUID id,
+            @AuthenticationPrincipal CustomUserPrincipal principal
+    ) {
+        groupService.deleteGroup(id, principal.id());
+        return ResponseEntity.ok(ApiResponse.success(null, "Group deleted successfully"));
+    }
+
+    @GetMapping("/{id}/invitations")
+    @Operation(summary = "Get pending group invitations", description = "Returns active pending invitations for this group. Accessible to group members.")
+    public ResponseEntity<ApiResponse<List<com.settl.backend.group.dto.GroupInvitationDto>>> getPendingInvitations(
+            @PathVariable("id") UUID id,
+            @AuthenticationPrincipal CustomUserPrincipal principal
+    ) {
+        List<com.settl.backend.group.dto.GroupInvitationDto> invitations = groupService.getPendingInvitations(id, principal.id());
+        return ResponseEntity.ok(ApiResponse.success(invitations, "Pending invitations retrieved"));
+    }
+
+    @PostMapping("/{id}/invitations/{invitationId}/resend")
+    @Operation(summary = "Resend invitation email", description = "Refreshes the invitation token and resends the invitation email. Caller must be group admin.")
+    public ResponseEntity<ApiResponse<com.settl.backend.group.dto.GroupInvitationDto>> resendInvitation(
+            @PathVariable("id") UUID id,
+            @PathVariable("invitationId") UUID invitationId,
+            @AuthenticationPrincipal CustomUserPrincipal principal
+    ) {
+        com.settl.backend.group.dto.GroupInvitationDto res = groupService.resendInvitation(id, invitationId, principal.id());
+        return ResponseEntity.ok(ApiResponse.success(res, "Invitation email resent successfully"));
+    }
+
+    @DeleteMapping("/{id}/invitations/{invitationId}")
+    @Operation(summary = "Revoke invitation", description = "Cancels a pending invitation. Caller must be group admin.")
+    public ResponseEntity<ApiResponse<Void>> revokeInvitation(
+            @PathVariable("id") UUID id,
+            @PathVariable("invitationId") UUID invitationId,
+            @AuthenticationPrincipal CustomUserPrincipal principal
+    ) {
+        groupService.revokeInvitation(id, invitationId, principal.id());
+        return ResponseEntity.ok(ApiResponse.success(null, "Invitation revoked successfully"));
     }
 }

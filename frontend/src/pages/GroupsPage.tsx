@@ -1,7 +1,10 @@
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { groupsApi } from '../api/client'
+import { useAuthStore } from '../store/authStore'
+import type { Group } from '../types/api'
 import {
   Users,
   Plus,
@@ -10,13 +13,28 @@ import {
   Calendar,
   Layers,
   Sparkles,
+  Pencil,
+  Trash2,
+  AlertTriangle,
+  X,
 } from 'lucide-react'
 
 export const GroupsPage: React.FC = () => {
   const queryClient = useQueryClient()
+  const { user } = useAuthStore()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [groupName, setGroupName] = useState('')
   const [currency, setCurrency] = useState('USD')
+
+  // Edit & Delete Group State
+  const [editingGroup, setEditingGroup] = useState<Group | null>(null)
+  const [editGroupName, setEditGroupName] = useState('')
+  const [editGroupCurrency, setEditGroupCurrency] = useState('USD')
+  const [editGroupError, setEditGroupError] = useState<string | null>(null)
+
+  const [deletingGroup, setDeletingGroup] = useState<Group | null>(null)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleteGroupError, setDeleteGroupError] = useState<string | null>(null)
 
   const { data: groups, isLoading, error } = useQuery({
     queryKey: ['groups'],
@@ -38,6 +56,53 @@ export const GroupsPage: React.FC = () => {
       setCurrency('USD')
     },
   })
+
+  const updateGroupMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingGroup) return
+      await groupsApi.update(editingGroup.id, {
+        name: editGroupName.trim(),
+        defaultCurrency: editGroupCurrency,
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['groups'] })
+      setEditingGroup(null)
+      setEditGroupError(null)
+    },
+    onError: (err: unknown) => {
+      let message = 'Failed to update group. Please try again.'
+      if (err && typeof err === 'object' && 'response' in err) {
+        const axiosErr = err as { response?: { data?: { message?: string } } }
+        message = axiosErr.response?.data?.message || message
+      }
+      setEditGroupError(message)
+    },
+  })
+
+  const deleteGroupMutation = useMutation({
+    mutationFn: async () => {
+      if (!deletingGroup) return
+      await groupsApi.delete(deletingGroup.id)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['groups'] })
+      setDeletingGroup(null)
+      setDeleteGroupError(null)
+    },
+    onError: (err: unknown) => {
+      let message = 'Failed to delete group. Please make sure all debts are fully settled.'
+      if (err && typeof err === 'object' && 'response' in err) {
+        const axiosErr = err as { response?: { data?: { message?: string } } }
+        message = axiosErr.response?.data?.message || message
+      }
+      setDeleteGroupError(message)
+    },
+  })
+
+  const isGroupAdmin = (g: Group) =>
+    g.createdBy === user?.id ||
+    !!g.members?.some((m) => m.userId === user?.id && (m.admin || m.isAdmin))
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
@@ -99,9 +164,44 @@ export const GroupsPage: React.FC = () => {
                   <Users className="h-4 w-4 text-slate-400" />
                   <span>{group.memberCount || group.members?.length || 1} members</span>
                 </div>
-                <div className="flex items-center gap-1 font-semibold text-emerald-600 group-hover:translate-x-0.5 transition">
-                  <span>View</span>
-                  <ArrowRight className="h-3.5 w-3.5" />
+                <div className="flex items-center gap-1">
+                  {isGroupAdmin(group) && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setEditingGroup(group)
+                          setEditGroupName(group.name)
+                          setEditGroupCurrency(group.defaultCurrency)
+                          setEditGroupError(null)
+                        }}
+                        title="Edit group details"
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setDeletingGroup(group)
+                          setDeleteConfirmText('')
+                          setDeleteGroupError(null)
+                        }}
+                        title="Delete group"
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </>
+                  )}
+                  <span className="flex items-center gap-1 font-semibold text-emerald-600 group-hover:translate-x-0.5 transition ml-1">
+                    <span>View</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </span>
                 </div>
               </div>
             </Link>
@@ -208,6 +308,237 @@ export const GroupsPage: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Edit Group Modal */}
+      {editingGroup && createPortal(
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !updateGroupMutation.isPending) {
+              setEditingGroup(null)
+            }
+          }}
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-xs p-4 sm:p-6"
+        >
+          <div className="flex min-h-full items-center justify-center">
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-md my-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl transition-all"
+            >
+              <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="rounded-xl bg-emerald-100 p-2 text-emerald-700">
+                    <Pencil className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">Edit Group Details</h2>
+                    <p className="text-xs text-slate-500">Update group name and currency preferences</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingGroup(null)}
+                  disabled={updateGroupMutation.isPending}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  updateGroupMutation.mutate()
+                }}
+                className="mt-5 space-y-4"
+              >
+                {editGroupError && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                    {editGroupError}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                    Group Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editGroupName}
+                    onChange={(e) => setEditGroupName(e.target.value)}
+                    placeholder="e.g. Ski Trip, Flat 4B"
+                    className="mt-1.5 block w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                    Default Currency
+                  </label>
+                  <select
+                    value={editGroupCurrency}
+                    onChange={(e) => setEditGroupCurrency(e.target.value)}
+                    className="mt-1.5 block w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                  >
+                    <option value="USD">USD ($)</option>
+                    <option value="EUR">EUR (€)</option>
+                    <option value="GBP">GBP (£)</option>
+                    <option value="INR">INR (₹)</option>
+                    <option value="CAD">CAD ($)</option>
+                    <option value="AUD">AUD ($)</option>
+                    <option value="JPY">JPY (¥)</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setEditingGroup(null)}
+                    disabled={updateGroupMutation.isPending}
+                    className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={updateGroupMutation.isPending || !editGroupName.trim()}
+                    className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50 transition"
+                  >
+                    {updateGroupMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>Updating...</span>
+                      </>
+                    ) : (
+                      <span>Save Changes</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Delete Group Modal */}
+      {deletingGroup && createPortal(
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !deleteGroupMutation.isPending) {
+              setDeletingGroup(null)
+            }
+          }}
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-xs p-4 sm:p-6"
+        >
+          <div className="flex min-h-full items-center justify-center">
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-lg my-8 rounded-2xl border border-red-200 bg-white p-6 shadow-2xl transition-all"
+            >
+              <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-xl bg-red-100 p-2 text-red-600">
+                    <AlertTriangle className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">Delete Group</h2>
+                    <p className="text-xs text-red-600 font-medium">Permanent and irreversible action</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDeletingGroup(null)}
+                  disabled={deleteGroupMutation.isPending}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-4">
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  This will permanently delete the group <strong className="text-slate-900">{deletingGroup.name}</strong>,
+                  including all recorded shared expenses, settlement ledgers, and recurring schedules.
+                </p>
+
+                <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3.5 text-xs text-amber-900 leading-relaxed">
+                  <strong>Notice:</strong> All group debts must be fully settled (each member's balance must be <strong>0.00</strong>)
+                  before this group can be deleted.
+                </div>
+
+                {deleteGroupError && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-3.5 space-y-2">
+                    <p className="text-xs text-red-800">{deleteGroupError}</p>
+                    {deleteGroupError.toLowerCase().includes('settled') && (
+                      <Link
+                        to={`/groups/${deletingGroup.id}`}
+                        onClick={() => setDeletingGroup(null)}
+                        className="text-xs font-semibold text-red-700 underline hover:text-red-900 block"
+                      >
+                        Open Group to Settle Up Balances &rarr;
+                      </Link>
+                    )}
+                  </div>
+                )}
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    if (deleteConfirmText.trim() === deletingGroup.name.trim()) {
+                      deleteGroupMutation.mutate()
+                    }
+                  }}
+                  className="space-y-4 pt-1"
+                >
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-800 mb-1.5">
+                      Type <span className="font-mono text-red-600 font-bold select-all">{deletingGroup.name}</span> to confirm:
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={deleteConfirmText}
+                      onChange={(e) => setDeleteConfirmText(e.target.value)}
+                      placeholder={deletingGroup.name}
+                      className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs font-mono text-slate-900 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setDeletingGroup(null)}
+                      disabled={deleteGroupMutation.isPending}
+                      className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={deleteGroupMutation.isPending || deleteConfirmText.trim() !== deletingGroup.name.trim()}
+                      className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                    >
+                      {deleteGroupMutation.isPending ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <span>Deleting Group...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span>Permanently Delete Group</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   )

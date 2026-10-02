@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import React, { useState, useEffect } from 'react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   groupsApi,
@@ -40,14 +41,21 @@ import {
   Printer,
   Ban,
   Zap,
+  AlertTriangle,
+  X,
+  Pencil,
+  Settings,
+  Check,
+  Mail,
 } from 'lucide-react'
 
 export const GroupDetailPage: React.FC = () => {
   const { groupId } = useParams<{ groupId: string }>()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { user } = useAuthStore()
 
-  const [activeTab, setActiveTab] = useState<'expenses' | 'balances' | 'settlements' | 'recurring' | 'activity'>('expenses')
+  const [activeTab, setActiveTab] = useState<'expenses' | 'balances' | 'settlements' | 'recurring' | 'members' | 'activity' | 'settings'>('expenses')
   const [showAddExpenseModal, setShowAddExpenseModal] = useState(false)
   const [showAddRecurringModal, setShowAddRecurringModal] = useState(false)
   const [showRecordSettlementModal, setShowRecordSettlementModal] = useState(false)
@@ -56,6 +64,23 @@ export const GroupDetailPage: React.FC = () => {
   const [showAddMember, setShowAddMember] = useState(false)
   const [memberEmail, setMemberEmail] = useState('')
   const [memberIsAdmin, setMemberIsAdmin] = useState(false)
+
+  // Edit Group State (Header Modal)
+  const [showEditGroupModal, setShowEditGroupModal] = useState(false)
+  const [editGroupName, setEditGroupName] = useState('')
+  const [editGroupCurrency, setEditGroupCurrency] = useState('USD')
+  const [editGroupError, setEditGroupError] = useState<string | null>(null)
+  const [editGroupSuccess, setEditGroupSuccess] = useState<string | null>(null)
+
+  // Settings Tab State
+  const [settingsName, setSettingsName] = useState('')
+  const [settingsCurrency, setSettingsCurrency] = useState('USD')
+
+  // Delete Group State
+  const [showDeleteGroupModal, setShowDeleteGroupModal] = useState(false)
+  const [deleteGroupConfirmText, setDeleteGroupConfirmText] = useState('')
+  const [deleteGroupError, setDeleteGroupError] = useState<string | null>(null)
+  const [isDeletingGroup, setIsDeletingGroup] = useState(false)
 
   // Search & Filter for expenses
   const [expenseSearch, setExpenseSearch] = useState('')
@@ -71,6 +96,68 @@ export const GroupDetailPage: React.FC = () => {
     },
     enabled: !!groupId,
   })
+
+  useEffect(() => {
+    if (group) {
+      setSettingsName(group.name)
+      setSettingsCurrency(group.defaultCurrency)
+      setEditGroupName(group.name)
+      setEditGroupCurrency(group.defaultCurrency)
+    }
+  }, [group])
+
+  const isGroupAdmin =
+    group?.createdBy === user?.id ||
+    !!group?.members?.some((m) => m.userId === user?.id && (m.admin || m.isAdmin))
+
+  const updateGroupMutation = useMutation({
+    mutationFn: async (data: { name: string; defaultCurrency: string }) => {
+      if (!groupId) return
+      await groupsApi.update(groupId, data)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['group', groupId] })
+      queryClient.invalidateQueries({ queryKey: ['groups'] })
+      queryClient.invalidateQueries({ queryKey: ['userGroups'] })
+      setShowEditGroupModal(false)
+      setEditGroupError(null)
+      setEditGroupSuccess('Group details updated successfully.')
+      setTimeout(() => setEditGroupSuccess(null), 4000)
+    },
+    onError: (err: unknown) => {
+      let message = 'Failed to update group. Please try again.'
+      if (err && typeof err === 'object' && 'response' in err) {
+        const axiosErr = err as { response?: { data?: { message?: string } } }
+        message = axiosErr.response?.data?.message || message
+      }
+      setEditGroupError(message)
+    },
+  })
+
+  const handleDeleteGroup = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!groupId || !group) return
+    if (deleteGroupConfirmText.trim() !== group.name.trim()) return
+
+    setDeleteGroupError(null)
+    setIsDeletingGroup(true)
+
+    try {
+      await groupsApi.delete(groupId)
+      queryClient.invalidateQueries({ queryKey: ['groups'] })
+      queryClient.invalidateQueries({ queryKey: ['userGroups'] })
+      navigate('/groups')
+    } catch (err: unknown) {
+      let message = 'Failed to delete group. Please make sure all debts are fully settled.'
+      if (err && typeof err === 'object' && 'response' in err) {
+        const axiosErr = err as { response?: { data?: { message?: string } } }
+        message = axiosErr.response?.data?.message || message
+      }
+      setDeleteGroupError(message)
+    } finally {
+      setIsDeletingGroup(false)
+    }
+  }
 
   // Expenses
   const { data: expenses, isLoading: expensesLoading } = useQuery({
@@ -198,9 +285,55 @@ export const GroupDetailPage: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['group', groupId] })
+      queryClient.invalidateQueries({ queryKey: ['groupInvitations', groupId] })
       setShowAddMember(false)
       setMemberEmail('')
       setMemberIsAdmin(false)
+    },
+  })
+
+  // Pending Invitations Query
+  const { data: invitationsData } = useQuery({
+    queryKey: ['groupInvitations', groupId],
+    queryFn: async () => {
+      if (!groupId) return []
+      const res = await groupsApi.getInvitations(groupId)
+      return res.data.data || []
+    },
+    enabled: !!groupId,
+  })
+
+  // Resend Invitation Mutation
+  const resendInvitationMutation = useMutation({
+    mutationFn: async (invitationId: string) => {
+      if (!groupId) return
+      await groupsApi.resendInvitation(groupId, invitationId)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['groupInvitations', groupId] })
+    },
+  })
+
+  // Revoke Invitation Mutation
+  const revokeInvitationMutation = useMutation({
+    mutationFn: async (invitationId: string) => {
+      if (!groupId) return
+      await groupsApi.revokeInvitation(groupId, invitationId)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['groupInvitations', groupId] })
+    },
+  })
+
+  // Remove Member Mutation
+  const removeMemberMutation = useMutation({
+    mutationFn: async (memberId: string) => {
+      if (!groupId) return
+      await groupsApi.removeMember(groupId, memberId)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['group', groupId] })
+      queryClient.invalidateQueries({ queryKey: ['activity', groupId] })
     },
   })
 
@@ -246,7 +379,7 @@ export const GroupDetailPage: React.FC = () => {
     )
   }
 
-  const isUserAdmin = group.members?.some((m) => m.userId === user?.id && m.admin)
+  const isUserAdmin = isGroupAdmin
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
@@ -260,13 +393,28 @@ export const GroupDetailPage: React.FC = () => {
             <ArrowLeft className="h-3.5 w-3.5" />
             <span>Back to All Groups</span>
           </Link>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
               {group.name}
             </h1>
             <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 uppercase">
               {group.defaultCurrency}
             </span>
+            {isUserAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditGroupName(group.name)
+                  setEditGroupCurrency(group.defaultCurrency)
+                  setEditGroupError(null)
+                  setShowEditGroupModal(true)
+                }}
+                title="Edit Group Details"
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition cursor-pointer"
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
+            )}
           </div>
           <p className="mt-1 text-xs text-slate-500">
             Created on {formatDate(group.createdAt)} • {group.members?.length || 0} members
@@ -308,6 +456,36 @@ export const GroupDetailPage: React.FC = () => {
             <Plus className="h-4 w-4" />
             <span>Add Expense</span>
           </button>
+
+          {isGroupAdmin && (
+            <>
+              <button
+                onClick={() => {
+                  setEditGroupName(group.name)
+                  setEditGroupCurrency(group.defaultCurrency)
+                  setEditGroupError(null)
+                  setShowEditGroupModal(true)
+                }}
+                title="Edit Group"
+                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 transition cursor-pointer"
+              >
+                <Pencil className="h-4 w-4 text-slate-500" />
+                <span className="hidden sm:inline">Edit Details</span>
+              </button>
+              <button
+                onClick={() => {
+                  setDeleteGroupConfirmText('')
+                  setDeleteGroupError(null)
+                  setShowDeleteGroupModal(true)
+                }}
+                title="Delete Group"
+                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-xl border border-red-200 bg-red-50/70 px-3 py-2 text-xs font-semibold text-red-700 shadow-xs hover:bg-red-100 hover:border-red-300 transition cursor-pointer"
+              >
+                <Trash2 className="h-4 w-4 text-red-600" />
+                <span className="hidden sm:inline">Delete Group</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -318,7 +496,9 @@ export const GroupDetailPage: React.FC = () => {
           { id: 'balances', label: 'Balances & Settle Up', icon: DollarSign },
           { id: 'settlements', label: 'Settlement Ledger', icon: CheckCircle },
           { id: 'recurring', label: 'Recurring', icon: Repeat },
+          { id: 'members', label: 'Members & Invites', icon: Users, badge: invitationsData?.length },
           { id: 'activity', label: 'Activity Feed', icon: History },
+          { id: 'settings', label: 'Settings', icon: Settings },
         ].map((tab) => {
           const Icon = tab.icon
           const isActive = activeTab === tab.id
@@ -334,6 +514,11 @@ export const GroupDetailPage: React.FC = () => {
             >
               <Icon className="h-4 w-4" />
               <span>{tab.label}</span>
+              {!!tab.badge && tab.badge > 0 && (
+                <span className="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                  {tab.badge}
+                </span>
+              )}
             </button>
           )
         })}
@@ -754,6 +939,329 @@ export const GroupDetailPage: React.FC = () => {
             )}
           </div>
         )}
+
+        {/* MEMBERS & INVITATIONS TAB */}
+        {activeTab === 'members' && (
+          <div className="space-y-8 max-w-4xl">
+            {/* Active Members Card */}
+            <div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Group Members</h3>
+                  <p className="text-xs text-slate-500">
+                    Participants who can split expenses and record settlements in this group.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowAddMember(true)}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition cursor-pointer self-start sm:self-auto"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  <span>Invite New Member</span>
+                </button>
+              </div>
+
+              <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden">
+                {group.members?.map((m) => {
+                  const isCreator = group.createdBy === m.userId
+                  const isAdminMember = m.admin || m.isAdmin || isCreator
+                  const isCurrentUser = user?.id === m.userId
+                  return (
+                    <div key={m.userId} className="flex items-center justify-between p-4 hover:bg-slate-50/50 transition">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-800 font-bold text-sm">
+                          {m.displayName?.charAt(0) || 'U'}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-slate-900 text-sm">{m.displayName}</span>
+                            {isCurrentUser && (
+                              <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
+                                You
+                              </span>
+                            )}
+                            {isCreator ? (
+                              <span className="rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 border border-amber-200">
+                                Owner
+                              </span>
+                            ) : isAdminMember ? (
+                              <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
+                                Admin
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {m.email} • Joined {formatDate(m.joinedAt)}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Remove member button for admin/creator */}
+                      {isUserAdmin && !isCurrentUser && !isCreator && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`Are you sure you want to remove ${m.displayName} from this group? All their debts must be settled first.`)) {
+                              removeMemberMutation.mutate(m.userId)
+                            }
+                          }}
+                          disabled={removeMemberMutation.isPending}
+                          title="Remove member"
+                          className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 transition cursor-pointer"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Pending Invitations Section */}
+            <div>
+              <div className="mb-4">
+                <h3 className="text-base font-bold text-slate-900">Pending Invitations</h3>
+                <p className="text-xs text-slate-500">
+                  Invited friends who haven't registered or accepted their invite link yet.
+                </p>
+              </div>
+
+              {invitationsData && invitationsData.length > 0 ? (
+                <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden">
+                  {invitationsData.map((inv) => (
+                    <div key={inv.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 hover:bg-slate-50/50 transition">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                          <Mail className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-slate-900 text-sm">{inv.email}</span>
+                            <span className="rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 border border-amber-200">
+                              Pending
+                            </span>
+                            {inv.isAdmin && (
+                              <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
+                                Invited as Admin
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            Invited by {inv.invitedByName} on {formatDate(inv.createdAt)} • Link expires in 7 days
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Admin controls: Resend & Revoke */}
+                      {isUserAdmin && (
+                        <div className="flex items-center gap-2 self-end sm:self-auto">
+                          <button
+                            type="button"
+                            onClick={() => resendInvitationMutation.mutate(inv.id)}
+                            disabled={resendInvitationMutation.isPending}
+                            title="Resend invitation link"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                          >
+                            <Repeat className="h-3.5 w-3.5 text-slate-500" />
+                            <span>Resend</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`Revoke invitation for ${inv.email}? The invite link will become invalid.`)) {
+                                revokeInvitationMutation.mutate(inv.id)
+                              }
+                            }}
+                            disabled={revokeInvitationMutation.isPending}
+                            title="Cancel / Revoke invite"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50/70 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition cursor-pointer"
+                          >
+                            <Ban className="h-3.5 w-3.5 text-red-600" />
+                            <span>Revoke</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white p-8 text-center text-xs text-slate-500">
+                  No pending invitations. All invited participants have accepted and joined.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* SETTINGS TAB */}
+        {activeTab === 'settings' && (
+          <div className="max-w-3xl space-y-8">
+            <div>
+              <h2 className="text-xl font-bold tracking-tight text-slate-900">Group Settings</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Manage group profile details, default currency, and group lifecycle.
+              </p>
+            </div>
+
+            {/* Notification messages */}
+            {editGroupSuccess && (
+              <div className="flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs font-semibold text-emerald-800">
+                <Check className="h-4 w-4 text-emerald-600 shrink-0" />
+                <span>{editGroupSuccess}</span>
+              </div>
+            )}
+            {editGroupError && (
+              <div className="flex items-center gap-2.5 rounded-xl border border-red-200 bg-red-50 p-4 text-xs font-semibold text-red-800">
+                <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />
+                <span>{editGroupError}</span>
+              </div>
+            )}
+
+            {/* General Settings Card */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-2">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">General Information</h3>
+                  <p className="text-xs text-slate-500">
+                    Group display name and default settlement currency.
+                  </p>
+                </div>
+                <div>
+                  {isUserAdmin ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                      Admin Access
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                      Member (Read-only)
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  if (!isUserAdmin || !settingsName.trim()) return
+                  updateGroupMutation.mutate({
+                    name: settingsName.trim(),
+                    defaultCurrency: settingsCurrency,
+                  })
+                }}
+                className="mt-6 space-y-5"
+              >
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                    Group Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={150}
+                    disabled={!isUserAdmin || updateGroupMutation.isPending}
+                    value={settingsName}
+                    onChange={(e) => setSettingsName(e.target.value)}
+                    placeholder="Group name"
+                    className="mt-1.5 block w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-50 disabled:text-slate-500"
+                  />
+                  <p className="mt-1.5 text-xs text-slate-400">
+                    Maximum 150 characters.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                    Default Currency
+                  </label>
+                  <select
+                    disabled={!isUserAdmin || updateGroupMutation.isPending}
+                    value={settingsCurrency}
+                    onChange={(e) => setSettingsCurrency(e.target.value)}
+                    className="mt-1.5 block w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white disabled:bg-slate-50 disabled:text-slate-500"
+                  >
+                    <option value="USD">USD ($) - US Dollar</option>
+                    <option value="EUR">EUR (€) - Euro</option>
+                    <option value="GBP">GBP (£) - British Pound</option>
+                    <option value="INR">INR (₹) - Indian Rupee</option>
+                    <option value="CAD">CAD ($) - Canadian Dollar</option>
+                    <option value="AUD">AUD ($) - Australian Dollar</option>
+                    <option value="JPY">JPY (¥) - Japanese Yen</option>
+                  </select>
+                  <p className="mt-1.5 text-xs text-slate-400">
+                    Used as the default currency for new expenses, debt calculations, and summary exports.
+                  </p>
+                </div>
+
+                {isUserAdmin && (
+                  <div className="flex items-center justify-end pt-3 border-t border-slate-100">
+                    <button
+                      type="submit"
+                      disabled={updateGroupMutation.isPending || !settingsName.trim()}
+                      className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50 transition cursor-pointer"
+                    >
+                      {updateGroupMutation.isPending ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <span>Saving Changes...</span>
+                        </>
+                      ) : (
+                        <span>Save Changes</span>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </form>
+            </div>
+
+            {/* Danger Zone Card */}
+            <div className="rounded-2xl border border-red-200 bg-red-50/30 p-6 shadow-xs">
+              <div className="flex items-start gap-3 border-b border-red-100 pb-4">
+                <div className="rounded-xl bg-red-100 p-2 text-red-600">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-red-900">Danger Zone</h3>
+                  <p className="text-xs text-red-700 mt-0.5">
+                    Irreversible actions that affect all members of this group.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="max-w-lg">
+                  <h4 className="text-sm font-bold text-slate-900">Delete this group</h4>
+                  <p className="mt-1 text-xs text-slate-600 leading-relaxed">
+                    Once deleted, all group expenses, settlements, balances, and recurring plans will be permanently lost.
+                    All debts must be settled (balance 0.00 for all members) prior to deletion.
+                  </p>
+                </div>
+
+                <div>
+                  {isUserAdmin ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeleteGroupConfirmText('')
+                        setDeleteGroupError(null)
+                        setShowDeleteGroupModal(true)
+                      }}
+                      className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-red-300 bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-red-700 transition cursor-pointer"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span>Delete Group</span>
+                    </button>
+                  ) : (
+                    <span className="text-xs text-slate-400 italic">
+                      Admins only
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Add Expense Modal */}
@@ -867,6 +1375,231 @@ export const GroupDetailPage: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Delete Group Modal */}
+      {showDeleteGroupModal && group && createPortal(
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isDeletingGroup) {
+              setShowDeleteGroupModal(false)
+            }
+          }}
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-xs p-4 sm:p-6"
+        >
+          <div className="flex min-h-full items-center justify-center">
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-lg my-8 rounded-2xl border border-red-200 bg-white p-6 shadow-2xl transition-all"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-xl bg-red-100 p-2 text-red-600">
+                    <AlertTriangle className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">Delete Group</h2>
+                    <p className="text-xs text-red-600 font-medium">Permanent and irreversible action</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteGroupModal(false)}
+                  disabled={isDeletingGroup}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Warning Content */}
+              <div className="mt-4 space-y-4">
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  This will permanently delete the group <strong className="text-slate-900">{group.name}</strong>,
+                  including all recorded shared expenses, settlement ledgers, recurring schedules, and activity feeds.
+                </p>
+
+                <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3.5 text-xs text-amber-900 leading-relaxed">
+                  <strong>Notice:</strong> All group debts must be fully settled (each member's balance must be <strong>0.00</strong>)
+                  before this group can be deleted.
+                </div>
+
+                {deleteGroupError && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-3.5 space-y-2">
+                    <p className="text-xs text-red-800">{deleteGroupError}</p>
+                    {deleteGroupError.toLowerCase().includes('settled') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowDeleteGroupModal(false)
+                          setActiveTab('balances')
+                        }}
+                        className="text-xs font-semibold text-red-700 underline hover:text-red-900 block"
+                      >
+                        Switch to Balances & Settle Up tab &rarr;
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                <form onSubmit={handleDeleteGroup} className="space-y-4 pt-1">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-800 mb-1.5">
+                      Type <span className="font-mono text-red-600 font-bold select-all">{group.name}</span> to confirm:
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={deleteGroupConfirmText}
+                      onChange={(e) => setDeleteGroupConfirmText(e.target.value)}
+                      placeholder={group.name}
+                      className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs font-mono text-slate-900 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setShowDeleteGroupModal(false)}
+                      disabled={isDeletingGroup}
+                      className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isDeletingGroup || deleteGroupConfirmText.trim() !== group.name.trim()}
+                      className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                    >
+                      {isDeletingGroup ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <span>Deleting Group...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span>Permanently Delete Group</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Edit Group Modal */}
+      {showEditGroupModal && group && createPortal(
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !updateGroupMutation.isPending) {
+              setShowEditGroupModal(false)
+            }
+          }}
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-xs p-4 sm:p-6"
+        >
+          <div className="flex min-h-full items-center justify-center">
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-md my-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl transition-all"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <h2 className="text-xl font-bold text-slate-900">Edit Group Details</h2>
+                <button
+                  type="button"
+                  onClick={() => setShowEditGroupModal(false)}
+                  disabled={updateGroupMutation.isPending}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  if (!editGroupName.trim()) return
+                  updateGroupMutation.mutate({
+                    name: editGroupName.trim(),
+                    defaultCurrency: editGroupCurrency,
+                  })
+                }}
+                className="mt-5 space-y-4"
+              >
+                {editGroupError && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                    {editGroupError}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                    Group Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={150}
+                    value={editGroupName}
+                    onChange={(e) => setEditGroupName(e.target.value)}
+                    placeholder="e.g. Ski Trip, Flat 4B"
+                    className="mt-1.5 block w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                    Default Currency
+                  </label>
+                  <select
+                    value={editGroupCurrency}
+                    onChange={(e) => setEditGroupCurrency(e.target.value)}
+                    className="mt-1.5 block w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                  >
+                    <option value="USD">USD ($)</option>
+                    <option value="EUR">EUR (€)</option>
+                    <option value="GBP">GBP (£)</option>
+                    <option value="INR">INR (₹)</option>
+                    <option value="CAD">CAD ($)</option>
+                    <option value="AUD">AUD ($)</option>
+                    <option value="JPY">JPY (¥)</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowEditGroupModal(false)}
+                    disabled={updateGroupMutation.isPending}
+                    className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={updateGroupMutation.isPending || !editGroupName.trim()}
+                    className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50 transition cursor-pointer"
+                  >
+                    {updateGroupMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>Updating...</span>
+                      </>
+                    ) : (
+                      <span>Save Changes</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   )

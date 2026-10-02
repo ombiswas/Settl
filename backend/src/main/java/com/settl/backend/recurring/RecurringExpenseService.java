@@ -126,7 +126,9 @@ public class RecurringExpenseService {
                 .orElseThrow(() -> ApiException.notFound("Recurring expense not found", "RECURRING_EXPENSE_NOT_FOUND"));
 
         boolean isCreator = recurring.getPaidBy().getId().equals(callerId);
-        boolean isAdmin = callerMembership.isAdmin();
+        boolean isGroupCreator = recurring.getGroup() != null && recurring.getGroup().getCreatedBy() != null
+                && recurring.getGroup().getCreatedBy().getId().equals(callerId);
+        boolean isAdmin = callerMembership.isAdmin() || isGroupCreator;
         if (!isCreator && !isAdmin) {
             throw ApiException.forbidden("Only the creator or a group admin can deactivate recurring expenses", "INSUFFICIENT_PERMISSIONS");
         }

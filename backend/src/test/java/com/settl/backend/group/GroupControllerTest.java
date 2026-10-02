@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.settl.backend.auth.JwtService;
 import com.settl.backend.group.dto.AddMemberRequest;
 import com.settl.backend.group.dto.CreateGroupRequest;
+import com.settl.backend.group.dto.UpdateGroupRequest;
 import com.settl.backend.user.User;
 import com.settl.backend.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +23,7 @@ import java.util.TimeZone;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -159,5 +161,71 @@ class GroupControllerTest {
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    void deleteGroup_WhenAdminAndNoDebts_ShouldReturn200() throws Exception {
+        Group group = new Group("Trip to Paris", "EUR", adminUser);
+        group = groupRepository.save(group);
+        groupMemberRepository.save(new GroupMember(group, adminUser, true));
+
+        mockMvc.perform(delete("/api/groups/" + group.getId())
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("Group deleted successfully"));
+    }
+
+    @Test
+    void deleteGroup_WhenNotAdmin_ShouldReturn403() throws Exception {
+        Group group = new Group("Trip to Paris", "EUR", adminUser);
+        group = groupRepository.save(group);
+        groupMemberRepository.save(new GroupMember(group, adminUser, true));
+        groupMemberRepository.save(new GroupMember(group, regularUser, false));
+
+        String memberToken = jwtService.generateAccessToken(regularUser);
+
+        mockMvc.perform(delete("/api/groups/" + group.getId())
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("ONLY_ADMIN_CAN_DELETE_GROUP"));
+    }
+
+    @Test
+    void updateGroup_WhenAdmin_ShouldReturn200AndUpdatedGroup() throws Exception {
+        Group group = new Group("Original Name", "USD", adminUser);
+        group = groupRepository.save(group);
+        groupMemberRepository.save(new GroupMember(group, adminUser, true));
+
+        UpdateGroupRequest request = new UpdateGroupRequest("Updated Name", "EUR");
+
+        mockMvc.perform(put("/api/groups/" + group.getId())
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.name").value("Updated Name"))
+                .andExpect(jsonPath("$.data.defaultCurrency").value("EUR"));
+    }
+
+    @Test
+    void updateGroup_WhenNotAdmin_ShouldReturn403() throws Exception {
+        Group group = new Group("Original Name", "USD", adminUser);
+        group = groupRepository.save(group);
+        groupMemberRepository.save(new GroupMember(group, adminUser, true));
+        groupMemberRepository.save(new GroupMember(group, regularUser, false));
+
+        String memberToken = jwtService.generateAccessToken(regularUser);
+        UpdateGroupRequest request = new UpdateGroupRequest("Hacked Name", "EUR");
+
+        mockMvc.perform(put("/api/groups/" + group.getId())
+                        .header("Authorization", "Bearer " + memberToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("ONLY_ADMIN_CAN_UPDATE_GROUP"));
     }
 }

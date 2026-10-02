@@ -1,10 +1,11 @@
 import React, { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { expensesApi } from '../api/client'
 import { formatCurrency, formatDate } from '../lib/utils'
 import { CategoryBadge } from '../components/expenses/CategoryBadge'
 import { CategoryPicker } from '../components/expenses/CategoryPicker'
-import type { ExpenseCategory } from '../types/api'
+import type { ExpenseCategory, PersonalExpense } from '../types/api'
 import {
   PieChart as RechartsPie,
   Pie,
@@ -21,6 +22,10 @@ import {
   Filter,
   Download,
   PieChart,
+  Pencil,
+  Trash2,
+  AlertTriangle,
+  X,
 } from 'lucide-react'
 
 const CHART_COLORS = [
@@ -45,6 +50,17 @@ export const PersonalExpensesPage: React.FC = () => {
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('')
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
+
+  // Edit & Delete State
+  const [editingExpense, setEditingExpense] = useState<PersonalExpense | null>(null)
+  const [editDescription, setEditDescription] = useState('')
+  const [editAmount, setEditAmount] = useState('')
+  const [editCurrency, setEditCurrency] = useState('USD')
+  const [editCategory, setEditCategory] = useState<ExpenseCategory>('FOOD_AND_DINING')
+  const [editError, setEditError] = useState<string | null>(null)
+
+  const [deletingExpense, setDeletingExpense] = useState<PersonalExpense | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   // Categories list
   const { data: categories } = useQuery({
@@ -97,6 +113,74 @@ export const PersonalExpensesPage: React.FC = () => {
       setDescription('')
       setAmount('')
       setCategory('FOOD_AND_DINING')
+    },
+  })
+
+  const handleStartEdit = (exp: PersonalExpense) => {
+    setEditingExpense(exp)
+    setEditDescription(exp.description)
+    setEditAmount(exp.amount.toString())
+    setEditCurrency(exp.currency || 'USD')
+    setEditCategory(exp.category)
+    setEditError(null)
+  }
+
+  const handleStartDelete = (exp: PersonalExpense) => {
+    setDeletingExpense(exp)
+    setDeleteError(null)
+  }
+
+  // Update Personal Expense Mutation
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingExpense) return
+      const parsedAmount = parseFloat(editAmount)
+      if (isNaN(parsedAmount) || parsedAmount <= 0) {
+        throw new Error('Please enter a valid amount greater than 0.00')
+      }
+      await expensesApi.updatePersonal(editingExpense.id, {
+        description: editDescription.trim(),
+        amount: parsedAmount,
+        currency: editCurrency,
+        category: editCategory,
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['personalExpenses'] })
+      queryClient.invalidateQueries({ queryKey: ['personalAnalytics'] })
+      setEditingExpense(null)
+      setEditError(null)
+    },
+    onError: (err: unknown) => {
+      let message = 'Failed to update expense. Please check your inputs.'
+      if (err instanceof Error) message = err.message
+      if (err && typeof err === 'object' && 'response' in err) {
+        const axiosErr = err as { response?: { data?: { message?: string } } }
+        message = axiosErr.response?.data?.message || message
+      }
+      setEditError(message)
+    },
+  })
+
+  // Delete Personal Expense Mutation
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      if (!deletingExpense) return
+      await expensesApi.deletePersonal(deletingExpense.id)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['personalExpenses'] })
+      queryClient.invalidateQueries({ queryKey: ['personalAnalytics'] })
+      setDeletingExpense(null)
+      setDeleteError(null)
+    },
+    onError: (err: unknown) => {
+      let message = 'Failed to delete expense.'
+      if (err && typeof err === 'object' && 'response' in err) {
+        const axiosErr = err as { response?: { data?: { message?: string } } }
+        message = axiosErr.response?.data?.message || message
+      }
+      setDeleteError(message)
     },
   })
 
@@ -278,7 +362,7 @@ export const PersonalExpensesPage: React.FC = () => {
           ) : expenses && expenses.length > 0 ? (
             <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-xs">
               {expenses.map((exp) => (
-                <div key={exp.id} className="flex items-center justify-between p-4 hover:bg-slate-50/50 transition">
+                <div key={exp.id} className="group flex items-center justify-between p-4 hover:bg-slate-50/50 transition">
                   <div className="flex items-start gap-3">
                     <div className="mt-0.5">
                       <CategoryBadge category={exp.category} />
@@ -288,9 +372,27 @@ export const PersonalExpensesPage: React.FC = () => {
                       <p className="text-xs text-slate-400">{formatDate(exp.createdAt)}</p>
                     </div>
                   </div>
-                  <p className="font-bold text-slate-900">
-                    {formatCurrency(exp.amount, exp.currency)}
-                  </p>
+                  <div className="flex items-center gap-3">
+                    <p className="font-bold text-slate-900">
+                      {formatCurrency(exp.amount, exp.currency)}
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleStartEdit(exp)}
+                        title="Edit expense"
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition cursor-pointer"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => handleStartDelete(exp)}
+                        title="Delete expense"
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 transition cursor-pointer"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -460,6 +562,223 @@ export const PersonalExpensesPage: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Edit Expense Modal */}
+      {editingExpense && createPortal(
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !updateMutation.isPending) {
+              setEditingExpense(null)
+            }
+          }}
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-xs p-4 sm:p-6"
+        >
+          <div className="flex min-h-full items-center justify-center">
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-md my-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl transition-all"
+            >
+              <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="rounded-xl bg-emerald-100 p-2 text-emerald-700">
+                    <Pencil className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">Edit Personal Expense</h2>
+                    <p className="text-xs text-slate-500">Correct mistaken amounts, categories, or details</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingExpense(null)}
+                  disabled={updateMutation.isPending}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  updateMutation.mutate()
+                }}
+                className="mt-5 space-y-4"
+              >
+                {editError && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                    {editError}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                    Description
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    placeholder="e.g. Grocery store, Uber ride"
+                    className="mt-1.5 block w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                      Amount
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      value={editAmount}
+                      onChange={(e) => setEditAmount(e.target.value)}
+                      placeholder="0.00"
+                      className="mt-1.5 block w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                      Currency
+                    </label>
+                    <select
+                      value={editCurrency}
+                      onChange={(e) => setEditCurrency(e.target.value)}
+                      className="mt-1.5 block w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                    >
+                      <option value="USD">USD ($)</option>
+                      <option value="EUR">EUR (€)</option>
+                      <option value="GBP">GBP (£)</option>
+                      <option value="INR">INR (₹)</option>
+                      <option value="CAD">CAD ($)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-2">
+                    Category
+                  </label>
+                  <CategoryPicker selected={editCategory} onSelect={setEditCategory} />
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setEditingExpense(null)}
+                    disabled={updateMutation.isPending}
+                    className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={updateMutation.isPending || !editDescription.trim() || !editAmount}
+                    className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50 transition"
+                  >
+                    {updateMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>Updating...</span>
+                      </>
+                    ) : (
+                      <span>Save Changes</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Delete Expense Confirmation Modal */}
+      {deletingExpense && createPortal(
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !deleteMutation.isPending) {
+              setDeletingExpense(null)
+            }
+          }}
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-xs p-4 sm:p-6"
+        >
+          <div className="flex min-h-full items-center justify-center">
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-sm my-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl transition-all"
+            >
+              <div className="flex items-start gap-3">
+                <div className="rounded-xl bg-red-100 p-2 text-red-600 shrink-0">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Delete Personal Expense</h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Are you sure you want to delete this expense? This action cannot be undone.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-900 truncate">
+                    {deletingExpense.description}
+                  </span>
+                  <span className="text-xs font-bold text-slate-900">
+                    {formatCurrency(deletingExpense.amount, deletingExpense.currency)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-slate-500">
+                  <span>{formatDate(deletingExpense.createdAt)}</span>
+                  <CategoryBadge category={deletingExpense.category} />
+                </div>
+              </div>
+
+              {deleteError && (
+                <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs text-red-700">
+                  {deleteError}
+                </div>
+              )}
+
+              <div className="mt-5 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setDeletingExpense(null)}
+                  disabled={deleteMutation.isPending}
+                  className="rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => deleteMutation.mutate()}
+                  disabled={deleteMutation.isPending}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-red-700 disabled:opacity-50 transition"
+                >
+                  {deleteMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Deleting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>Delete</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   )

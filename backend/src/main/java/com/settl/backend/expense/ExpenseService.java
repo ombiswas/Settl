@@ -156,9 +156,11 @@ public class ExpenseService {
         Expense expense = expenseRepository.findByIdAndGroupId(expenseId, groupId)
                 .orElseThrow(() -> ApiException.notFound("Expense not found in this group", "EXPENSE_NOT_FOUND"));
 
-        // Authorization: Only the creator/payer OR a group admin can edit
+        // Authorization: Only the creator/payer OR a group admin/creator can edit
         boolean isCreatorOrPayer = expense.getPaidBy().getId().equals(callerId);
-        boolean isAdmin = callerMembership.isAdmin();
+        boolean isGroupCreator = expense.getGroup() != null && expense.getGroup().getCreatedBy() != null
+                && expense.getGroup().getCreatedBy().getId().equals(callerId);
+        boolean isAdmin = callerMembership.isAdmin() || isGroupCreator;
         if (!isCreatorOrPayer && !isAdmin) {
             throw ApiException.forbidden("Only the creator of this expense or a group admin can edit it", "INSUFFICIENT_PERMISSIONS");
         }
@@ -234,7 +236,9 @@ public class ExpenseService {
                 .orElseThrow(() -> ApiException.notFound("Expense not found in this group", "EXPENSE_NOT_FOUND"));
 
         boolean isCreatorOrPayer = expense.getPaidBy().getId().equals(callerId);
-        boolean isAdmin = callerMembership.isAdmin();
+        boolean isGroupCreator = expense.getGroup() != null && expense.getGroup().getCreatedBy() != null
+                && expense.getGroup().getCreatedBy().getId().equals(callerId);
+        boolean isAdmin = callerMembership.isAdmin() || isGroupCreator;
         if (!isCreatorOrPayer && !isAdmin) {
             throw ApiException.forbidden("Only the creator of this expense or a group admin can delete it", "INSUFFICIENT_PERMISSIONS");
         }

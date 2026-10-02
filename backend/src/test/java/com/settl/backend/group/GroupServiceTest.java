@@ -7,6 +7,7 @@ import com.settl.backend.group.dto.AddMemberRequest;
 import com.settl.backend.group.dto.AddMemberResponse;
 import com.settl.backend.group.dto.CreateGroupRequest;
 import com.settl.backend.group.dto.GroupResponse;
+import com.settl.backend.group.dto.UpdateGroupRequest;
 import com.settl.backend.settlement.SettlementRepository;
 import com.settl.backend.user.User;
 import com.settl.backend.user.UserRepository;
@@ -57,6 +58,9 @@ class GroupServiceTest {
 
     @Mock
     private com.settl.backend.auth.EmailService emailService;
+
+    @Mock
+    private GroupInvitationRepository groupInvitationRepository;
 
     @InjectMocks
     private GroupService groupService;
@@ -167,7 +171,8 @@ class GroupServiceTest {
 
         assertThat(response.isExistingUser()).isFalse();
         assertThat(response.email()).isEqualTo("newuser@example.com");
-        assertThat(response.message()).contains("Invitation created");
+        assertThat(response.message()).contains("Invitation dispatched");
+        verify(groupInvitationRepository).save(any(GroupInvitation.class));
         verify(groupMemberRepository, never()).save(any());
         verify(emailService).sendGroupInvitationEmail(eq("newuser@example.com"), eq("Alice"), eq("Trip to Paris"), any(), eq(true));
     }
@@ -211,5 +216,131 @@ class GroupServiceTest {
         groupService.removeMember(group.getId(), user2.getId(), user1.getId());
 
         verify(groupMemberRepository).deleteByGroupIdAndUserId(eq(group.getId()), eq(user2.getId()));
+    }
+
+    @Test
+    void deleteGroup_WhenGroupNotFound_ThrowsNotFound() {
+        UUID nonExistentGroupId = UUID.randomUUID();
+        when(groupRepository.findById(nonExistentGroupId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> groupService.deleteGroup(nonExistentGroupId, user1.getId()))
+                .isInstanceOf(ApiException.class)
+                .matches(ex -> ((ApiException) ex).getErrorCode().equals("GROUP_NOT_FOUND"));
+
+        verify(groupRepository, never()).delete(any());
+    }
+
+    @Test
+    void deleteGroup_WhenCallerNotAdmin_ThrowsForbidden() {
+        GroupMember regularMember = new GroupMember(group, user2, false);
+        when(groupRepository.findById(group.getId())).thenReturn(Optional.of(group));
+        when(groupMemberRepository.findByGroupIdAndUserId(group.getId(), user2.getId())).thenReturn(Optional.of(regularMember));
+
+        assertThatThrownBy(() -> groupService.deleteGroup(group.getId(), user2.getId()))
+                .isInstanceOf(ApiException.class)
+                .matches(ex -> ((ApiException) ex).getErrorCode().equals("ONLY_ADMIN_CAN_DELETE_GROUP"));
+
+        verify(groupRepository, never()).delete(any());
+    }
+
+    @Test
+    void deleteGroup_WhenMemberHasUnsettledBalance_ThrowsBadRequest() {
+        GroupMember adminMember = new GroupMember(group, user1, true);
+        GroupMember targetMember = new GroupMember(group, user2, false);
+
+        when(groupRepository.findById(group.getId())).thenReturn(Optional.of(group));
+        when(groupMemberRepository.findByGroupIdAndUserId(group.getId(), user1.getId())).thenReturn(Optional.of(adminMember));
+        when(groupMemberRepository.findByGroupIdWithUser(group.getId())).thenReturn(List.of(adminMember, targetMember));
+
+        // user1 has balance 0
+        when(expenseRepository.sumPaidByUserIdInGroup(group.getId(), user1.getId())).thenReturn(BigDecimal.ZERO);
+        when(expenseShareRepository.sumOwedByUserIdInGroup(group.getId(), user1.getId())).thenReturn(BigDecimal.ZERO);
+        when(settlementRepository.sumSettlementsPaidByUserIdInGroup(group.getId(), user1.getId())).thenReturn(BigDecimal.ZERO);
+        when(settlementRepository.sumSettlementsReceivedByUserIdInGroup(group.getId(), user1.getId())).thenReturn(BigDecimal.ZERO);
+
+        // user2 owes 45.00 EUR
+        when(expenseRepository.sumPaidByUserIdInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
+        when(expenseShareRepository.sumOwedByUserIdInGroup(group.getId(), user2.getId())).thenReturn(new BigDecimal("45.00"));
+        when(settlementRepository.sumSettlementsPaidByUserIdInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
+        when(settlementRepository.sumSettlementsReceivedByUserIdInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
+
+        assertThatThrownBy(() -> groupService.deleteGroup(group.getId(), user1.getId()))
+                .isInstanceOf(ApiException.class)
+                .matches(ex -> ((ApiException) ex).getErrorCode().equals("UNSETTLED_GROUP_BALANCES"));
+
+        verify(groupRepository, never()).delete(any());
+    }
+
+    @Test
+    void deleteGroup_WhenAllBalancesZero_DeletesGroupSuccessfully() {
+        GroupMember adminMember = new GroupMember(group, user1, true);
+        GroupMember targetMember = new GroupMember(group, user2, false);
+
+        when(groupRepository.findById(group.getId())).thenReturn(Optional.of(group));
+        when(groupMemberRepository.findByGroupIdAndUserId(group.getId(), user1.getId())).thenReturn(Optional.of(adminMember));
+        when(groupMemberRepository.findByGroupIdWithUser(group.getId())).thenReturn(List.of(adminMember, targetMember));
+
+        // Both have zero balances
+        when(expenseRepository.sumPaidByUserIdInGroup(group.getId(), user1.getId())).thenReturn(new BigDecimal("50.00"));
+        when(expenseShareRepository.sumOwedByUserIdInGroup(group.getId(), user1.getId())).thenReturn(new BigDecimal("50.00"));
+        when(settlementRepository.sumSettlementsPaidByUserIdInGroup(group.getId(), user1.getId())).thenReturn(BigDecimal.ZERO);
+        when(settlementRepository.sumSettlementsReceivedByUserIdInGroup(group.getId(), user1.getId())).thenReturn(BigDecimal.ZERO);
+
+        when(expenseRepository.sumPaidByUserIdInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
+        when(expenseShareRepository.sumOwedByUserIdInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
+        when(settlementRepository.sumSettlementsPaidByUserIdInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
+        when(settlementRepository.sumSettlementsReceivedByUserIdInGroup(group.getId(), user2.getId())).thenReturn(BigDecimal.ZERO);
+
+        groupService.deleteGroup(group.getId(), user1.getId());
+
+        verify(groupMemberRepository).deleteAllByGroupId(group.getId());
+        verify(groupRepository).deleteGroupById(group.getId());
+    }
+
+    @Test
+    void updateGroup_WhenCallerAdmin_UpdatesNameAndCurrency() {
+        GroupMember adminMember = new GroupMember(group, user1, true);
+
+        when(groupRepository.findById(group.getId())).thenReturn(Optional.of(group));
+        when(groupMemberRepository.findByGroupIdAndUserId(group.getId(), user1.getId())).thenReturn(Optional.of(adminMember));
+        when(groupRepository.save(any(Group.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(groupMemberRepository.findByGroupIdWithUser(group.getId())).thenReturn(List.of(adminMember));
+
+        UpdateGroupRequest request = new UpdateGroupRequest("Eurotrip 2026", "EUR");
+        GroupResponse response = groupService.updateGroup(group.getId(), request, user1.getId());
+
+        assertThat(response.name()).isEqualTo("Eurotrip 2026");
+        assertThat(response.defaultCurrency()).isEqualTo("EUR");
+        verify(groupRepository).save(any(Group.class));
+    }
+
+    @Test
+    void updateGroup_WhenCallerNotAdmin_ThrowsForbidden() {
+        GroupMember regularMember = new GroupMember(group, user2, false);
+
+        when(groupRepository.findById(group.getId())).thenReturn(Optional.of(group));
+        when(groupMemberRepository.findByGroupIdAndUserId(group.getId(), user2.getId())).thenReturn(Optional.of(regularMember));
+
+        UpdateGroupRequest request = new UpdateGroupRequest("Eurotrip 2026", "EUR");
+
+        assertThatThrownBy(() -> groupService.updateGroup(group.getId(), request, user2.getId()))
+                .isInstanceOf(ApiException.class)
+                .matches(ex -> ((ApiException) ex).getErrorCode().equals("ONLY_ADMIN_CAN_UPDATE_GROUP"));
+
+        verify(groupRepository, never()).save(any());
+    }
+
+    @Test
+    void updateGroup_WhenGroupNotFound_ThrowsNotFound() {
+        UUID nonExistent = UUID.randomUUID();
+        when(groupRepository.findById(nonExistent)).thenReturn(Optional.empty());
+
+        UpdateGroupRequest request = new UpdateGroupRequest("Eurotrip 2026", "EUR");
+
+        assertThatThrownBy(() -> groupService.updateGroup(nonExistent, request, user1.getId()))
+                .isInstanceOf(ApiException.class)
+                .matches(ex -> ((ApiException) ex).getErrorCode().equals("GROUP_NOT_FOUND"));
+
+        verify(groupRepository, never()).save(any());
     }
 }
