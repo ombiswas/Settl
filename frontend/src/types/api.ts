@@ -181,12 +181,17 @@ export interface MonthlySpending {
   count: number
 }
 
-export interface PersonalAnalyticsResponse {
+export interface CurrencyAnalytics {
+  currency: string
   totalSpent: number
   totalExpenseCount: number
-  currency: string
   categoryBreakdown: CategorySpending[]
   monthlyBreakdown: MonthlySpending[]
+}
+
+export interface PersonalAnalyticsResponse {
+  currencies: CurrencyAnalytics[]
+  totalExpenseCount: number
 }
 
 export interface UserBalance {

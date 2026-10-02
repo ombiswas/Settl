@@ -3,6 +3,10 @@ package com.settl.backend.expense;
 import com.settl.backend.common.ApiException;
 import com.settl.backend.expense.dto.CategoryInfoDto;
 import com.settl.backend.expense.dto.CreatePersonalExpenseRequest;
+import com.settl.backend.expense.dto.CurrencyAnalyticsDto;
+import com.settl.backend.expense.dto.CurrencyCategorySpendingDto;
+import com.settl.backend.expense.dto.CurrencySummaryDto;
+import com.settl.backend.expense.dto.ExpenseDateAmountDto;
 import com.settl.backend.expense.dto.PersonalExpenseAnalyticsResponse;
 import com.settl.backend.expense.dto.PersonalExpenseResponse;
 import com.settl.backend.user.User;
@@ -85,38 +89,138 @@ class PersonalExpenseServiceTest {
 
     @Test
     void getPersonalAnalyticsCalculatesMetricsAccurately() {
-        Expense exp1 = new Expense(null, testUser, "Groceries", new BigDecimal("100.00"), "USD", ExpenseCategory.FOOD_AND_DINING, SplitType.PERSONAL, null);
-        exp1.setId(UUID.randomUUID());
-        exp1.setCreatedAt(Instant.parse("2026-08-01T10:00:00Z"));
+        // Setup mock aggregate results for USD
+        when(expenseRepository.findPersonalTotalsByUserId(userId))
+                .thenReturn(List.of(new CurrencySummaryDto("USD", new BigDecimal("200.00"), 3L)));
 
-        Expense exp2 = new Expense(null, testUser, "Subway Pass", new BigDecimal("50.00"), "USD", ExpenseCategory.TRANSPORTATION, SplitType.PERSONAL, null);
-        exp2.setId(UUID.randomUUID());
-        exp2.setCreatedAt(Instant.parse("2026-08-05T10:00:00Z"));
+        when(expenseRepository.findPersonalCategoriesByUserId(userId))
+                .thenReturn(List.of(
+                        new CurrencyCategorySpendingDto("USD", ExpenseCategory.FOOD_AND_DINING, new BigDecimal("150.00"), 2L),
+                        new CurrencyCategorySpendingDto("USD", ExpenseCategory.TRANSPORTATION, new BigDecimal("50.00"), 1L)
+                ));
 
-        Expense exp3 = new Expense(null, testUser, "Dinner Out", new BigDecimal("50.00"), "USD", ExpenseCategory.FOOD_AND_DINING, SplitType.PERSONAL, null);
-        exp3.setId(UUID.randomUUID());
-        exp3.setCreatedAt(Instant.parse("2026-08-10T10:00:00Z"));
-
-        when(expenseRepository.findPersonalExpensesByUserId(userId)).thenReturn(List.of(exp1, exp2, exp3));
+        when(expenseRepository.findPersonalExpenseDatesByUserId(userId))
+                .thenReturn(List.of(
+                        new ExpenseDateAmountDto("USD", Instant.parse("2026-08-01T10:00:00Z"), new BigDecimal("100.00")),
+                        new ExpenseDateAmountDto("USD", Instant.parse("2026-08-05T10:00:00Z"), new BigDecimal("50.00")),
+                        new ExpenseDateAmountDto("USD", Instant.parse("2026-08-10T10:00:00Z"), new BigDecimal("50.00"))
+                ));
 
         PersonalExpenseAnalyticsResponse analytics = personalExpenseService.getPersonalAnalytics(userId, null, null);
 
-        assertThat(analytics.totalSpent()).isEqualTo(new BigDecimal("200.00"));
         assertThat(analytics.totalExpenseCount()).isEqualTo(3);
-        assertThat(analytics.categoryBreakdown()).hasSize(2);
+        assertThat(analytics.currencies()).hasSize(1);
+
+        CurrencyAnalyticsDto usd = analytics.currencies().get(0);
+        assertThat(usd.currency()).isEqualTo("USD");
+        assertThat(usd.totalSpent()).isEqualTo(new BigDecimal("200.00"));
+        assertThat(usd.totalExpenseCount()).isEqualTo(3);
+        assertThat(usd.categoryBreakdown()).hasSize(2);
 
         // Food total is 150 (75%), Transportation total is 50 (25%)
-        assertThat(analytics.categoryBreakdown().get(0).category()).isEqualTo(ExpenseCategory.FOOD_AND_DINING);
-        assertThat(analytics.categoryBreakdown().get(0).totalAmount()).isEqualTo(new BigDecimal("150.00"));
-        assertThat(analytics.categoryBreakdown().get(0).percentage()).isEqualTo(new BigDecimal("75.00"));
+        assertThat(usd.categoryBreakdown().get(0).category()).isEqualTo(ExpenseCategory.FOOD_AND_DINING);
+        assertThat(usd.categoryBreakdown().get(0).totalAmount()).isEqualTo(new BigDecimal("150.00"));
+        assertThat(usd.categoryBreakdown().get(0).percentage()).isEqualTo(new BigDecimal("75.00"));
 
-        assertThat(analytics.categoryBreakdown().get(1).category()).isEqualTo(ExpenseCategory.TRANSPORTATION);
-        assertThat(analytics.categoryBreakdown().get(1).totalAmount()).isEqualTo(new BigDecimal("50.00"));
-        assertThat(analytics.categoryBreakdown().get(1).percentage()).isEqualTo(new BigDecimal("25.00"));
+        assertThat(usd.categoryBreakdown().get(1).category()).isEqualTo(ExpenseCategory.TRANSPORTATION);
+        assertThat(usd.categoryBreakdown().get(1).totalAmount()).isEqualTo(new BigDecimal("50.00"));
+        assertThat(usd.categoryBreakdown().get(1).percentage()).isEqualTo(new BigDecimal("25.00"));
 
-        assertThat(analytics.monthlyBreakdown()).hasSize(1);
-        assertThat(analytics.monthlyBreakdown().get(0).month()).isEqualTo("2026-08");
-        assertThat(analytics.monthlyBreakdown().get(0).totalAmount()).isEqualTo(new BigDecimal("200.00"));
+        assertThat(usd.monthlyBreakdown()).hasSize(1);
+        assertThat(usd.monthlyBreakdown().get(0).month()).isEqualTo("2026-08");
+        assertThat(usd.monthlyBreakdown().get(0).totalAmount()).isEqualTo(new BigDecimal("200.00"));
+    }
+
+    @Test
+    void getPersonalAnalyticsWithMixedCurrenciesNeverMixesAmounts() {
+        // Setup mock aggregate results for INR and USD
+        when(expenseRepository.findPersonalTotalsByUserId(userId))
+                .thenReturn(List.of(
+                        new CurrencySummaryDto("INR", new BigDecimal("5000.00"), 2L),
+                        new CurrencySummaryDto("USD", new BigDecimal("150.00"), 2L)
+                ));
+
+        when(expenseRepository.findPersonalCategoriesByUserId(userId))
+                .thenReturn(List.of(
+                        new CurrencyCategorySpendingDto("INR", ExpenseCategory.HOUSING_AND_UTILITIES, new BigDecimal("3000.00"), 1L),
+                        new CurrencyCategorySpendingDto("INR", ExpenseCategory.FOOD_AND_DINING, new BigDecimal("2000.00"), 1L),
+                        new CurrencyCategorySpendingDto("USD", ExpenseCategory.FOOD_AND_DINING, new BigDecimal("100.00"), 1L),
+                        new CurrencyCategorySpendingDto("USD", ExpenseCategory.TRANSPORTATION, new BigDecimal("50.00"), 1L)
+                ));
+
+        when(expenseRepository.findPersonalExpenseDatesByUserId(userId))
+                .thenReturn(List.of(
+                        new ExpenseDateAmountDto("INR", Instant.parse("2026-08-01T10:00:00Z"), new BigDecimal("2000.00")),
+                        new ExpenseDateAmountDto("INR", Instant.parse("2026-09-01T10:00:00Z"), new BigDecimal("3000.00")),
+                        new ExpenseDateAmountDto("USD", Instant.parse("2026-08-02T10:00:00Z"), new BigDecimal("100.00")),
+                        new ExpenseDateAmountDto("USD", Instant.parse("2026-08-15T10:00:00Z"), new BigDecimal("50.00"))
+                ));
+
+        PersonalExpenseAnalyticsResponse analytics = personalExpenseService.getPersonalAnalytics(userId, null, null);
+
+        assertThat(analytics.totalExpenseCount()).isEqualTo(4);
+        assertThat(analytics.currencies()).hasSize(2);
+
+        // INR section
+        CurrencyAnalyticsDto inr = analytics.currencies().get(0);
+        assertThat(inr.currency()).isEqualTo("INR");
+        assertThat(inr.totalSpent()).isEqualTo(new BigDecimal("5000.00"));
+        assertThat(inr.totalExpenseCount()).isEqualTo(2);
+        assertThat(inr.categoryBreakdown()).hasSize(2);
+        assertThat(inr.categoryBreakdown().get(0).category()).isEqualTo(ExpenseCategory.HOUSING_AND_UTILITIES);
+        assertThat(inr.categoryBreakdown().get(0).totalAmount()).isEqualTo(new BigDecimal("3000.00"));
+        assertThat(inr.categoryBreakdown().get(0).percentage()).isEqualTo(new BigDecimal("60.00"));
+        assertThat(inr.categoryBreakdown().get(1).category()).isEqualTo(ExpenseCategory.FOOD_AND_DINING);
+        assertThat(inr.categoryBreakdown().get(1).totalAmount()).isEqualTo(new BigDecimal("2000.00"));
+        assertThat(inr.categoryBreakdown().get(1).percentage()).isEqualTo(new BigDecimal("40.00"));
+        assertThat(inr.monthlyBreakdown()).hasSize(2);
+        assertThat(inr.monthlyBreakdown().get(0).month()).isEqualTo("2026-08");
+        assertThat(inr.monthlyBreakdown().get(0).totalAmount()).isEqualTo(new BigDecimal("2000.00"));
+        assertThat(inr.monthlyBreakdown().get(1).month()).isEqualTo("2026-09");
+        assertThat(inr.monthlyBreakdown().get(1).totalAmount()).isEqualTo(new BigDecimal("3000.00"));
+
+        // USD section
+        CurrencyAnalyticsDto usd = analytics.currencies().get(1);
+        assertThat(usd.currency()).isEqualTo("USD");
+        assertThat(usd.totalSpent()).isEqualTo(new BigDecimal("150.00"));
+        assertThat(usd.totalExpenseCount()).isEqualTo(2);
+        assertThat(usd.categoryBreakdown()).hasSize(2);
+        assertThat(usd.categoryBreakdown().get(0).category()).isEqualTo(ExpenseCategory.FOOD_AND_DINING);
+        assertThat(usd.categoryBreakdown().get(0).totalAmount()).isEqualTo(new BigDecimal("100.00"));
+        assertThat(usd.categoryBreakdown().get(0).percentage()).isEqualTo(new BigDecimal("66.67"));
+        assertThat(usd.categoryBreakdown().get(1).category()).isEqualTo(ExpenseCategory.TRANSPORTATION);
+        assertThat(usd.categoryBreakdown().get(1).totalAmount()).isEqualTo(new BigDecimal("50.00"));
+        assertThat(usd.categoryBreakdown().get(1).percentage()).isEqualTo(new BigDecimal("33.33"));
+        assertThat(usd.monthlyBreakdown()).hasSize(1);
+        assertThat(usd.monthlyBreakdown().get(0).month()).isEqualTo("2026-08");
+        assertThat(usd.monthlyBreakdown().get(0).totalAmount()).isEqualTo(new BigDecimal("150.00"));
+    }
+
+    @Test
+    void getPersonalAnalyticsWithEmptyDataReturnsEmptyCurrencies() {
+        when(expenseRepository.findPersonalTotalsByUserId(userId)).thenReturn(List.of());
+
+        PersonalExpenseAnalyticsResponse analytics = personalExpenseService.getPersonalAnalytics(userId, null, null);
+
+        assertThat(analytics.currencies()).isEmpty();
+        assertThat(analytics.totalExpenseCount()).isEqualTo(0);
+    }
+
+    @Test
+    void getPersonalAnalyticsWithCurrencyFilterReturnsOnlyRequestedCurrency() {
+        when(expenseRepository.findPersonalTotalsByUserIdAndCurrency(userId, "USD"))
+                .thenReturn(List.of(new CurrencySummaryDto("USD", new BigDecimal("100.00"), 1L)));
+        when(expenseRepository.findPersonalCategoriesByUserIdAndCurrency(userId, "USD"))
+                .thenReturn(List.of(new CurrencyCategorySpendingDto("USD", ExpenseCategory.FOOD_AND_DINING, new BigDecimal("100.00"), 1L)));
+        when(expenseRepository.findPersonalExpenseDatesByUserIdAndCurrency(userId, "USD"))
+                .thenReturn(List.of(new ExpenseDateAmountDto("USD", Instant.parse("2026-08-01T10:00:00Z"), new BigDecimal("100.00"))));
+
+        PersonalExpenseAnalyticsResponse analytics = personalExpenseService.getPersonalAnalytics(userId, "USD", null, null);
+
+        assertThat(analytics.currencies()).hasSize(1);
+        assertThat(analytics.currencies().get(0).currency()).isEqualTo("USD");
+        assertThat(analytics.currencies().get(0).totalSpent()).isEqualTo(new BigDecimal("100.00"));
+        assertThat(analytics.totalExpenseCount()).isEqualTo(1);
     }
 
     @Test

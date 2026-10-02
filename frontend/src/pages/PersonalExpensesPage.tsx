@@ -86,11 +86,12 @@ export const PersonalExpensesPage: React.FC = () => {
 
   // Personal analytics
   const { data: analytics } = useQuery({
-    queryKey: ['personalAnalytics', startDate, endDate],
+    queryKey: ['personalAnalytics', startDate, endDate, currency],
     queryFn: async () => {
       const params: Record<string, string> = {}
       if (startDate) params.startDate = startDate
       if (endDate) params.endDate = endDate
+      if (currency) params.currency = currency
       const res = await expensesApi.getPersonalAnalytics(params)
       return res.data.data
     },
@@ -186,8 +187,11 @@ export const PersonalExpensesPage: React.FC = () => {
 
   const totalSpent = expenses?.reduce((sum, e) => sum + e.amount, 0) || 0
 
+  const activeCurrencySection =
+    analytics?.currencies?.find((c) => c.currency === currency) || analytics?.currencies?.[0]
+
   const categoryChartData =
-    analytics?.categoryBreakdown?.map((cat) => ({
+    activeCurrencySection?.categoryBreakdown?.map((cat) => ({
       name: cat.categoryDisplayName || cat.category,
       value: cat.totalAmount,
       percentage: cat.percentage,

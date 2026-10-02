@@ -1,5 +1,8 @@
 package com.settl.backend.expense;
 
+import com.settl.backend.expense.dto.CurrencyCategorySpendingDto;
+import com.settl.backend.expense.dto.CurrencySummaryDto;
+import com.settl.backend.expense.dto.ExpenseDateAmountDto;
 import com.settl.backend.settlement.dto.UserAmountDto;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -66,4 +69,108 @@ public interface ExpenseRepository extends JpaRepository<Expense, UUID> {
 
     @Query("SELECT COUNT(e) FROM Expense e WHERE e.group IS NOT NULL AND e.paidBy.id = :userId")
     long countGroupExpensesPaidByUserId(@Param("userId") UUID userId);
+
+    // --- Personal Expense Analytics Aggregations ---
+
+    @Query("SELECT new com.settl.backend.expense.dto.CurrencySummaryDto(e.currency, COALESCE(SUM(e.amount), 0), COUNT(e)) " +
+           "FROM Expense e WHERE e.group IS NULL AND e.paidBy.id = :userId " +
+           "GROUP BY e.currency ORDER BY e.currency ASC")
+    List<CurrencySummaryDto> findPersonalTotalsByUserId(@Param("userId") UUID userId);
+
+    @Query("SELECT new com.settl.backend.expense.dto.CurrencySummaryDto(e.currency, COALESCE(SUM(e.amount), 0), COUNT(e)) " +
+           "FROM Expense e WHERE e.group IS NULL AND e.paidBy.id = :userId " +
+           "AND e.createdAt >= :startDate AND e.createdAt <= :endDate " +
+           "GROUP BY e.currency ORDER BY e.currency ASC")
+    List<CurrencySummaryDto> findPersonalTotalsByUserIdAndDateRange(
+            @Param("userId") UUID userId,
+            @Param("startDate") Instant startDate,
+            @Param("endDate") Instant endDate
+    );
+
+    @Query("SELECT new com.settl.backend.expense.dto.CurrencySummaryDto(e.currency, COALESCE(SUM(e.amount), 0), COUNT(e)) " +
+           "FROM Expense e WHERE e.group IS NULL AND e.paidBy.id = :userId AND e.currency = :currency " +
+           "GROUP BY e.currency")
+    List<CurrencySummaryDto> findPersonalTotalsByUserIdAndCurrency(
+            @Param("userId") UUID userId,
+            @Param("currency") String currency
+    );
+
+    @Query("SELECT new com.settl.backend.expense.dto.CurrencySummaryDto(e.currency, COALESCE(SUM(e.amount), 0), COUNT(e)) " +
+           "FROM Expense e WHERE e.group IS NULL AND e.paidBy.id = :userId AND e.currency = :currency " +
+           "AND e.createdAt >= :startDate AND e.createdAt <= :endDate " +
+           "GROUP BY e.currency")
+    List<CurrencySummaryDto> findPersonalTotalsByUserIdAndCurrencyAndDateRange(
+            @Param("userId") UUID userId,
+            @Param("currency") String currency,
+            @Param("startDate") Instant startDate,
+            @Param("endDate") Instant endDate
+    );
+
+    @Query("SELECT new com.settl.backend.expense.dto.CurrencyCategorySpendingDto(e.currency, e.category, COALESCE(SUM(e.amount), 0), COUNT(e)) " +
+           "FROM Expense e WHERE e.group IS NULL AND e.paidBy.id = :userId " +
+           "GROUP BY e.currency, e.category ORDER BY e.currency ASC, SUM(e.amount) DESC")
+    List<CurrencyCategorySpendingDto> findPersonalCategoriesByUserId(@Param("userId") UUID userId);
+
+    @Query("SELECT new com.settl.backend.expense.dto.CurrencyCategorySpendingDto(e.currency, e.category, COALESCE(SUM(e.amount), 0), COUNT(e)) " +
+           "FROM Expense e WHERE e.group IS NULL AND e.paidBy.id = :userId " +
+           "AND e.createdAt >= :startDate AND e.createdAt <= :endDate " +
+           "GROUP BY e.currency, e.category ORDER BY e.currency ASC, SUM(e.amount) DESC")
+    List<CurrencyCategorySpendingDto> findPersonalCategoriesByUserIdAndDateRange(
+            @Param("userId") UUID userId,
+            @Param("startDate") Instant startDate,
+            @Param("endDate") Instant endDate
+    );
+
+    @Query("SELECT new com.settl.backend.expense.dto.CurrencyCategorySpendingDto(e.currency, e.category, COALESCE(SUM(e.amount), 0), COUNT(e)) " +
+           "FROM Expense e WHERE e.group IS NULL AND e.paidBy.id = :userId AND e.currency = :currency " +
+           "GROUP BY e.currency, e.category ORDER BY SUM(e.amount) DESC")
+    List<CurrencyCategorySpendingDto> findPersonalCategoriesByUserIdAndCurrency(
+            @Param("userId") UUID userId,
+            @Param("currency") String currency
+    );
+
+    @Query("SELECT new com.settl.backend.expense.dto.CurrencyCategorySpendingDto(e.currency, e.category, COALESCE(SUM(e.amount), 0), COUNT(e)) " +
+           "FROM Expense e WHERE e.group IS NULL AND e.paidBy.id = :userId AND e.currency = :currency " +
+           "AND e.createdAt >= :startDate AND e.createdAt <= :endDate " +
+           "GROUP BY e.currency, e.category ORDER BY SUM(e.amount) DESC")
+    List<CurrencyCategorySpendingDto> findPersonalCategoriesByUserIdAndCurrencyAndDateRange(
+            @Param("userId") UUID userId,
+            @Param("currency") String currency,
+            @Param("startDate") Instant startDate,
+            @Param("endDate") Instant endDate
+    );
+
+    @Query("SELECT new com.settl.backend.expense.dto.ExpenseDateAmountDto(e.currency, e.createdAt, e.amount) " +
+           "FROM Expense e WHERE e.group IS NULL AND e.paidBy.id = :userId " +
+           "ORDER BY e.createdAt ASC")
+    List<ExpenseDateAmountDto> findPersonalExpenseDatesByUserId(@Param("userId") UUID userId);
+
+    @Query("SELECT new com.settl.backend.expense.dto.ExpenseDateAmountDto(e.currency, e.createdAt, e.amount) " +
+           "FROM Expense e WHERE e.group IS NULL AND e.paidBy.id = :userId " +
+           "AND e.createdAt >= :startDate AND e.createdAt <= :endDate " +
+           "ORDER BY e.createdAt ASC")
+    List<ExpenseDateAmountDto> findPersonalExpenseDatesByUserIdAndDateRange(
+            @Param("userId") UUID userId,
+            @Param("startDate") Instant startDate,
+            @Param("endDate") Instant endDate
+    );
+
+    @Query("SELECT new com.settl.backend.expense.dto.ExpenseDateAmountDto(e.currency, e.createdAt, e.amount) " +
+           "FROM Expense e WHERE e.group IS NULL AND e.paidBy.id = :userId AND e.currency = :currency " +
+           "ORDER BY e.createdAt ASC")
+    List<ExpenseDateAmountDto> findPersonalExpenseDatesByUserIdAndCurrency(
+            @Param("userId") UUID userId,
+            @Param("currency") String currency
+    );
+
+    @Query("SELECT new com.settl.backend.expense.dto.ExpenseDateAmountDto(e.currency, e.createdAt, e.amount) " +
+           "FROM Expense e WHERE e.group IS NULL AND e.paidBy.id = :userId AND e.currency = :currency " +
+           "AND e.createdAt >= :startDate AND e.createdAt <= :endDate " +
+           "ORDER BY e.createdAt ASC")
+    List<ExpenseDateAmountDto> findPersonalExpenseDatesByUserIdAndCurrencyAndDateRange(
+            @Param("userId") UUID userId,
+            @Param("currency") String currency,
+            @Param("startDate") Instant startDate,
+            @Param("endDate") Instant endDate
+    );
 }

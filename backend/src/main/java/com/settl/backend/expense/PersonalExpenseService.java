@@ -5,6 +5,10 @@ import com.settl.backend.common.CurrencyValidator;
 import com.settl.backend.expense.dto.CategoryInfoDto;
 import com.settl.backend.expense.dto.CategorySpendingDto;
 import com.settl.backend.expense.dto.CreatePersonalExpenseRequest;
+import com.settl.backend.expense.dto.CurrencyAnalyticsDto;
+import com.settl.backend.expense.dto.CurrencyCategorySpendingDto;
+import com.settl.backend.expense.dto.CurrencySummaryDto;
+import com.settl.backend.expense.dto.ExpenseDateAmountDto;
 import com.settl.backend.expense.dto.MonthlySpendingDto;
 import com.settl.backend.expense.dto.PersonalExpenseAnalyticsResponse;
 import com.settl.backend.expense.dto.PersonalExpenseResponse;
@@ -141,69 +145,128 @@ public class PersonalExpenseService {
             LocalDate startDate,
             LocalDate endDate
     ) {
-        List<PersonalExpenseResponse> expenses = getPersonalExpenses(userId, null, startDate, endDate);
+        return getPersonalAnalytics(userId, null, startDate, endDate);
+    }
 
-        BigDecimal totalSpent = BigDecimal.ZERO;
-        Map<ExpenseCategory, List<PersonalExpenseResponse>> byCategory = new LinkedHashMap<>();
-        Map<String, List<PersonalExpenseResponse>> byMonth = new TreeMap<>();
-
-        for (PersonalExpenseResponse exp : expenses) {
-            totalSpent = totalSpent.add(exp.amount());
-            byCategory.computeIfAbsent(exp.category(), k -> new ArrayList<>()).add(exp);
-
-            String monthStr = MONTH_FORMATTER.format(exp.createdAt());
-            byMonth.computeIfAbsent(monthStr, k -> new ArrayList<>()).add(exp);
+    @Transactional(readOnly = true)
+    public PersonalExpenseAnalyticsResponse getPersonalAnalytics(
+            UUID userId,
+            String currencyFilter,
+            LocalDate startDate,
+            LocalDate endDate
+    ) {
+        String currency = (currencyFilter != null && !currencyFilter.isBlank())
+                ? currencyFilter.trim().toUpperCase()
+                : null;
+        if (currency != null) {
+            CurrencyValidator.validate(currency);
         }
 
-        totalSpent = totalSpent.setScale(2, RoundingMode.HALF_UP);
-        final BigDecimal finalTotal = totalSpent;
+        boolean hasDateRange = (startDate != null && endDate != null);
+        Instant start = hasDateRange ? startDate.atStartOfDay().toInstant(ZoneOffset.UTC) : null;
+        Instant end = hasDateRange ? endDate.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC) : null;
 
-        List<CategorySpendingDto> categoryBreakdown = new ArrayList<>();
-        for (Map.Entry<ExpenseCategory, List<PersonalExpenseResponse>> entry : byCategory.entrySet()) {
-            ExpenseCategory cat = entry.getKey();
-            BigDecimal catTotal = entry.getValue().stream()
-                    .map(PersonalExpenseResponse::amount)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add)
-                    .setScale(2, RoundingMode.HALF_UP);
+        List<CurrencySummaryDto> totals;
+        List<CurrencyCategorySpendingDto> categories;
+        List<ExpenseDateAmountDto> dates;
 
-            BigDecimal percentage = BigDecimal.ZERO;
-            if (finalTotal.compareTo(BigDecimal.ZERO) > 0) {
-                percentage = catTotal.multiply(new BigDecimal("100.00"))
-                        .divide(finalTotal, 2, RoundingMode.HALF_UP);
+        if (currency != null) {
+            if (hasDateRange) {
+                totals = expenseRepository.findPersonalTotalsByUserIdAndCurrencyAndDateRange(userId, currency, start, end);
+                categories = expenseRepository.findPersonalCategoriesByUserIdAndCurrencyAndDateRange(userId, currency, start, end);
+                dates = expenseRepository.findPersonalExpenseDatesByUserIdAndCurrencyAndDateRange(userId, currency, start, end);
+            } else {
+                totals = expenseRepository.findPersonalTotalsByUserIdAndCurrency(userId, currency);
+                categories = expenseRepository.findPersonalCategoriesByUserIdAndCurrency(userId, currency);
+                dates = expenseRepository.findPersonalExpenseDatesByUserIdAndCurrency(userId, currency);
+            }
+        } else {
+            if (hasDateRange) {
+                totals = expenseRepository.findPersonalTotalsByUserIdAndDateRange(userId, start, end);
+                categories = expenseRepository.findPersonalCategoriesByUserIdAndDateRange(userId, start, end);
+                dates = expenseRepository.findPersonalExpenseDatesByUserIdAndDateRange(userId, start, end);
+            } else {
+                totals = expenseRepository.findPersonalTotalsByUserId(userId);
+                categories = expenseRepository.findPersonalCategoriesByUserId(userId);
+                dates = expenseRepository.findPersonalExpenseDatesByUserId(userId);
+            }
+        }
+
+        if (totals.isEmpty()) {
+            return new PersonalExpenseAnalyticsResponse(List.of(), 0);
+        }
+
+        Map<String, List<CurrencyCategorySpendingDto>> categoriesByCurrency = categories.stream()
+                .collect(Collectors.groupingBy(CurrencyCategorySpendingDto::currency));
+
+        Map<String, List<ExpenseDateAmountDto>> datesByCurrency = dates.stream()
+                .collect(Collectors.groupingBy(ExpenseDateAmountDto::currency));
+
+        List<CurrencyAnalyticsDto> sections = new ArrayList<>();
+        int totalCountAcrossCurrencies = 0;
+
+        for (CurrencySummaryDto totalDto : totals) {
+            String curr = totalDto.currency();
+            BigDecimal currTotal = totalDto.totalSpent().setScale(2, RoundingMode.HALF_UP);
+            int currCount = (int) totalDto.count();
+            totalCountAcrossCurrencies += currCount;
+
+            // Category breakdown per currency
+            List<CategorySpendingDto> categoryBreakdown = new ArrayList<>();
+            List<CurrencyCategorySpendingDto> currCategories = categoriesByCurrency.getOrDefault(curr, List.of());
+            for (CurrencyCategorySpendingDto catDto : currCategories) {
+                BigDecimal catTotal = catDto.totalAmount().setScale(2, RoundingMode.HALF_UP);
+                BigDecimal percentage = BigDecimal.ZERO;
+                if (currTotal.compareTo(BigDecimal.ZERO) > 0) {
+                    percentage = catTotal.multiply(new BigDecimal("100.00"))
+                            .divide(currTotal, 2, RoundingMode.HALF_UP);
+                }
+                categoryBreakdown.add(new CategorySpendingDto(
+                        catDto.category(),
+                        catDto.category().getDisplayName(),
+                        catTotal,
+                        percentage,
+                        (int) catDto.count()
+                ));
+            }
+            categoryBreakdown.sort((a, b) -> b.totalAmount().compareTo(a.totalAmount()));
+
+            // Monthly breakdown per currency
+            Map<String, MonthBucket> monthlyMap = new TreeMap<>();
+            List<ExpenseDateAmountDto> currDates = datesByCurrency.getOrDefault(curr, List.of());
+            for (ExpenseDateAmountDto dateDto : currDates) {
+                String monthStr = MONTH_FORMATTER.format(dateDto.createdAt());
+                monthlyMap.computeIfAbsent(monthStr, k -> new MonthBucket()).add(dateDto.amount());
             }
 
-            categoryBreakdown.add(new CategorySpendingDto(
-                    cat,
-                    cat.getDisplayName(),
-                    catTotal,
-                    percentage,
-                    entry.getValue().size()
+            List<MonthlySpendingDto> monthlyBreakdown = monthlyMap.entrySet().stream()
+                    .map(entry -> new MonthlySpendingDto(
+                            entry.getKey(),
+                            entry.getValue().total.setScale(2, RoundingMode.HALF_UP),
+                            entry.getValue().count
+                    ))
+                    .toList();
+
+            sections.add(new CurrencyAnalyticsDto(
+                    curr,
+                    currTotal,
+                    currCount,
+                    categoryBreakdown,
+                    monthlyBreakdown
             ));
         }
 
-        categoryBreakdown.sort((a, b) -> b.totalAmount().compareTo(a.totalAmount()));
+        return new PersonalExpenseAnalyticsResponse(sections, totalCountAcrossCurrencies);
+    }
 
-        List<MonthlySpendingDto> monthlyBreakdown = new ArrayList<>();
-        for (Map.Entry<String, List<PersonalExpenseResponse>> entry : byMonth.entrySet()) {
-            BigDecimal monthTotal = entry.getValue().stream()
-                    .map(PersonalExpenseResponse::amount)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add)
-                    .setScale(2, RoundingMode.HALF_UP);
+    private static class MonthBucket {
+        BigDecimal total = BigDecimal.ZERO;
+        int count = 0;
 
-            monthlyBreakdown.add(new MonthlySpendingDto(
-                    entry.getKey(),
-                    monthTotal,
-                    entry.getValue().size()
-            ));
+        void add(BigDecimal amount) {
+            total = total.add(amount);
+            count++;
         }
-
-        return new PersonalExpenseAnalyticsResponse(
-                totalSpent,
-                expenses.size(),
-                expenses.isEmpty() ? "USD" : expenses.get(0).currency(),
-                categoryBreakdown,
-                monthlyBreakdown
-        );
     }
 
     public List<CategoryInfoDto> getAllCategories() {

@@ -218,7 +218,7 @@ export const expensesApi = {
   deletePersonal: (expenseId: string) =>
     apiClient.delete<ApiResponse<void>>(`/expenses/personal/${expenseId}`),
 
-  getPersonalAnalytics: (params?: { startDate?: string; endDate?: string }) =>
+  getPersonalAnalytics: (params?: { startDate?: string; endDate?: string; currency?: string }) =>
     apiClient.get<ApiResponse<PersonalAnalyticsResponse>>('/expenses/personal/analytics', { params }),
 
   getCategories: () =>

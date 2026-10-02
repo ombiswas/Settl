@@ -64,13 +64,14 @@ public class PersonalExpenseController {
     }
 
     @GetMapping("/analytics")
-    @Operation(summary = "Get spending analytics", description = "Calculates category spending breakdown, monthly summaries, and total spent")
+    @Operation(summary = "Get spending analytics", description = "Calculates per-currency category spending breakdowns, monthly trends, and totals without mixing currencies")
     public ResponseEntity<ApiResponse<PersonalExpenseAnalyticsResponse>> getPersonalAnalytics(
             @AuthenticationPrincipal CustomUserPrincipal principal,
+            @RequestParam(value = "currency", required = false) String currency,
             @RequestParam(value = "startDate", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(value = "endDate", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate
     ) {
-        PersonalExpenseAnalyticsResponse response = personalExpenseService.getPersonalAnalytics(principal.id(), startDate, endDate);
+        PersonalExpenseAnalyticsResponse response = personalExpenseService.getPersonalAnalytics(principal.id(), currency, startDate, endDate);
         return ResponseEntity.ok(ApiResponse.success(response, "Personal spending analytics generated successfully"));
     }
 

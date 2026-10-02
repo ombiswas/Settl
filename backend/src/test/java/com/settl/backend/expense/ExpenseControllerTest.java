@@ -203,9 +203,11 @@ class ExpenseControllerTest {
         mockMvc.perform(get("/api/expenses/personal/analytics")
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.totalSpent").value(20.00))
                 .andExpect(jsonPath("$.data.totalExpenseCount").value(2))
-                .andExpect(jsonPath("$.data.categoryBreakdown").isArray());
+                .andExpect(jsonPath("$.data.currencies[0].currency").value("USD"))
+                .andExpect(jsonPath("$.data.currencies[0].totalSpent").value(20.00))
+                .andExpect(jsonPath("$.data.currencies[0].totalExpenseCount").value(2))
+                .andExpect(jsonPath("$.data.currencies[0].categoryBreakdown").isArray());
     }
 
     @Test
