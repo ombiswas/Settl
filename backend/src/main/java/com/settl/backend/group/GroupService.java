@@ -46,6 +46,7 @@ public class GroupService {
     private final BalanceService balanceService;
     private final AuditService auditService;
     private final com.settl.backend.auth.EmailService emailService;
+    private final com.settl.backend.settlement.GroupBalanceCacheEvictor groupBalanceCacheEvictor;
 
     @org.springframework.beans.factory.annotation.Value("${app.cors.allowed-origins:http://localhost:5173}")
     private String appBaseUrl = "http://localhost:5173";
@@ -57,7 +58,8 @@ public class GroupService {
             UserRepository userRepository,
             BalanceService balanceService,
             AuditService auditService,
-            com.settl.backend.auth.EmailService emailService
+            com.settl.backend.auth.EmailService emailService,
+            com.settl.backend.settlement.GroupBalanceCacheEvictor groupBalanceCacheEvictor
     ) {
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
@@ -66,6 +68,7 @@ public class GroupService {
         this.balanceService = balanceService;
         this.auditService = auditService;
         this.emailService = emailService;
+        this.groupBalanceCacheEvictor = groupBalanceCacheEvictor;
     }
 
     @Transactional
@@ -171,6 +174,8 @@ public class GroupService {
         details.put("newCurrency", savedGroup.getDefaultCurrency());
         auditService.logActivity(savedGroup, callerMember.getUser(), AuditAction.GROUP_UPDATED, details);
 
+        groupBalanceCacheEvictor.evictGroupBalances(groupId);
+
         return mapToGroupResponse(savedGroup);
     }
 
@@ -213,6 +218,8 @@ public class GroupService {
             details.put("addedUserName", targetUser.getDisplayName());
             details.put("isAdmin", makeAdmin);
             auditService.logActivity(group, callerMember.getUser(), AuditAction.MEMBER_JOINED, details);
+
+            groupBalanceCacheEvictor.evictGroupBalances(groupId);
 
             String groupUrl = baseUrl + "/groups/" + groupId;
             emailService.sendGroupInvitationEmail(targetUser.getEmail(), inviterName, group.getName(), groupUrl, false);
@@ -308,6 +315,8 @@ public class GroupService {
 
         groupMemberRepository.deleteByGroupIdAndUserId(groupId, targetUserId);
         log.info("Member id={} removed from group id={} by caller id={}", targetUserId, groupId, currentUserId);
+
+        groupBalanceCacheEvictor.evictGroupBalances(groupId);
     }
 
     @Transactional
@@ -337,6 +346,8 @@ public class GroupService {
         groupMemberRepository.deleteAllByGroupId(groupId);
         groupRepository.deleteGroupById(groupId);
         log.info("Group '{}' (id={}) deleted by admin user id={}", group.getName(), groupId, currentUserId);
+
+        groupBalanceCacheEvictor.evictGroupBalances(groupId);
     }
 
     private GroupResponse mapToGroupResponse(Group group) {
@@ -520,6 +531,8 @@ public class GroupService {
 
         invitation.setStatus(GroupInvitationStatus.ACCEPTED);
         groupInvitationRepository.save(invitation);
+
+        groupBalanceCacheEvictor.evictGroupBalances(group.getId());
 
         return mapToGroupResponse(group);
     }

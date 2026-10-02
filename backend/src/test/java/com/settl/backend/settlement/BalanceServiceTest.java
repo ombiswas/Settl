@@ -59,13 +59,21 @@ class BalanceServiceTest {
     @BeforeEach
     void setUp() {
         DebtSimplifier debtSimplifier = new DebtSimplifier();
+        GroupBalanceCacheService groupBalanceCacheService = new GroupBalanceCacheService(
+                groupRepository,
+                groupMemberRepository,
+                expenseRepository,
+                expenseShareRepository,
+                settlementRepository
+        );
         balanceService = new BalanceService(
                 groupRepository,
                 groupMemberRepository,
                 expenseRepository,
                 expenseShareRepository,
                 settlementRepository,
-                debtSimplifier
+                debtSimplifier,
+                groupBalanceCacheService
         );
 
         aliceId = UUID.randomUUID();

@@ -33,19 +33,22 @@ public class SettlementService {
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final GroupBalanceCacheEvictor groupBalanceCacheEvictor;
 
     public SettlementService(
             SettlementRepository settlementRepository,
             GroupRepository groupRepository,
             GroupMemberRepository groupMemberRepository,
             UserRepository userRepository,
-            AuditService auditService
+            AuditService auditService,
+            GroupBalanceCacheEvictor groupBalanceCacheEvictor
     ) {
         this.settlementRepository = settlementRepository;
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
+        this.groupBalanceCacheEvictor = groupBalanceCacheEvictor;
     }
 
     @Transactional
@@ -105,6 +108,8 @@ public class SettlementService {
         details.put("toUserName", toUser.getDisplayName());
         details.put("simplified", saved.isSimplified());
         auditService.logActivity(group, fromUser, AuditAction.SETTLEMENT_RECORDED, details);
+
+        groupBalanceCacheEvictor.evictGroupBalances(groupId);
 
         return mapToResponse(saved);
     }

@@ -63,6 +63,9 @@ class RecurringExpenseServiceTest {
     @Mock
     private AuditService auditService;
 
+    @Mock
+    private com.settl.backend.settlement.GroupBalanceCacheEvictor groupBalanceCacheEvictor;
+
     private RecurringExpenseService recurringExpenseService;
 
     private Group testGroup;
@@ -89,7 +92,8 @@ class RecurringExpenseServiceTest {
                 userRepository,
                 expenseRepository,
                 splitCalculator,
-                auditService
+                auditService,
+                groupBalanceCacheEvictor
         );
 
         aliceId = UUID.randomUUID();

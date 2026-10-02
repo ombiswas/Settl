@@ -46,6 +46,7 @@ public class RecurringExpenseService {
     private final ExpenseRepository expenseRepository;
     private final SplitCalculator splitCalculator;
     private final AuditService auditService;
+    private final com.settl.backend.settlement.GroupBalanceCacheEvictor groupBalanceCacheEvictor;
 
     public RecurringExpenseService(
             RecurringExpenseRepository recurringExpenseRepository,
@@ -54,7 +55,8 @@ public class RecurringExpenseService {
             UserRepository userRepository,
             ExpenseRepository expenseRepository,
             SplitCalculator splitCalculator,
-            AuditService auditService
+            AuditService auditService,
+            com.settl.backend.settlement.GroupBalanceCacheEvictor groupBalanceCacheEvictor
     ) {
         this.recurringExpenseRepository = recurringExpenseRepository;
         this.groupRepository = groupRepository;
@@ -63,6 +65,7 @@ public class RecurringExpenseService {
         this.expenseRepository = expenseRepository;
         this.splitCalculator = splitCalculator;
         this.auditService = auditService;
+        this.groupBalanceCacheEvictor = groupBalanceCacheEvictor;
     }
 
     @Transactional
@@ -212,6 +215,8 @@ public class RecurringExpenseService {
         details.put("amount", savedExpense.getAmount().toString());
         details.put("currency", savedExpense.getCurrency());
         auditService.logActivity(group, paidBy, AuditAction.RECURRING_EXPENSE_TRIGGERED, details);
+
+        groupBalanceCacheEvictor.evictGroupBalances(group.getId());
     }
 
     private Instant calculateNextRun(Instant currentNextRun, RecurringFrequency frequency) {

@@ -66,6 +66,9 @@ public class BalanceCharacterizationTest {
     @Autowired
     private SettlementRepository settlementRepository;
 
+    @Autowired
+    private GroupBalanceCacheEvictor groupBalanceCacheEvictor;
+
     @MockBean
     private JavaMailSender javaMailSender;
 
@@ -197,6 +200,7 @@ public class BalanceCharacterizationTest {
         settlementRepository.save(new Settlement(testGroup, alice, bob, new BigDecimal("40.00"), "USD", true));
         settlementRepository.save(new Settlement(testGroup, charlie, bob, new BigDecimal("45.00"), "USD", true));
         settlementRepository.save(new Settlement(testGroup, dave, bob, new BigDecimal("10.00"), "USD", true));
+        groupBalanceCacheEvictor.evictGroupBalances(testGroup.getId());
 
         // Verify all balances are now settled (0.00)
         GroupBalanceResponse settledResponse = balanceService.getGroupBalances(testGroup.getId(), alice.getId());

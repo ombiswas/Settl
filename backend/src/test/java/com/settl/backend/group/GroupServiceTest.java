@@ -58,6 +58,9 @@ class GroupServiceTest {
     @Mock
     private GroupInvitationRepository groupInvitationRepository;
 
+    @Mock
+    private com.settl.backend.settlement.GroupBalanceCacheEvictor groupBalanceCacheEvictor;
+
     @InjectMocks
     private GroupService groupService;
 

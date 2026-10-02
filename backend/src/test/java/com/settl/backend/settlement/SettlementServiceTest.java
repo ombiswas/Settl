@@ -44,6 +44,9 @@ class SettlementServiceTest {
     @Mock
     private AuditService auditService;
 
+    @Mock
+    private GroupBalanceCacheEvictor groupBalanceCacheEvictor;
+
     private SettlementService settlementService;
 
     private Group testGroup;
@@ -60,7 +63,8 @@ class SettlementServiceTest {
                 groupRepository,
                 groupMemberRepository,
                 userRepository,
-                auditService
+                auditService,
+                groupBalanceCacheEvictor
         );
 
         aliceId = UUID.randomUUID();

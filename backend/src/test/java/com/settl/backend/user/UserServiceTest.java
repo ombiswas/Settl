@@ -74,6 +74,9 @@ class UserServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private com.settl.backend.settlement.GroupBalanceCacheEvictor groupBalanceCacheEvictor;
+
     private UserService userService;
 
     private User user;
@@ -93,7 +96,8 @@ class UserServiceTest {
                 refreshTokenRepository,
                 auditService,
                 passwordEncoder,
-                new CookieFactory(false)
+                new CookieFactory(false),
+                groupBalanceCacheEvictor
         );
         userId = UUID.randomUUID();
         user = new User("alice@example.com", "encodedPassword", "Alice");

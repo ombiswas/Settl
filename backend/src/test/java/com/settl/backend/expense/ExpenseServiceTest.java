@@ -55,6 +55,9 @@ class ExpenseServiceTest {
     @Mock
     private com.settl.backend.audit.AuditService auditService;
 
+    @Mock
+    private com.settl.backend.settlement.GroupBalanceCacheEvictor groupBalanceCacheEvictor;
+
     private ExpenseService expenseService;
 
     private Group testGroup;
@@ -84,7 +87,8 @@ class ExpenseServiceTest {
                 groupMemberRepository,
                 userRepository,
                 splitCalculator,
-                auditService
+                auditService,
+                groupBalanceCacheEvictor
         );
 
         creatorId = UUID.randomUUID();

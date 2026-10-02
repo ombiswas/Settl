@@ -37,6 +37,7 @@ public class BalanceService {
     private final ExpenseShareRepository expenseShareRepository;
     private final SettlementRepository settlementRepository;
     private final DebtSimplifier debtSimplifier;
+    private final GroupBalanceCacheService groupBalanceCacheService;
 
     public BalanceService(
             GroupRepository groupRepository,
@@ -44,7 +45,8 @@ public class BalanceService {
             ExpenseRepository expenseRepository,
             ExpenseShareRepository expenseShareRepository,
             SettlementRepository settlementRepository,
-            DebtSimplifier debtSimplifier
+            DebtSimplifier debtSimplifier,
+            GroupBalanceCacheService groupBalanceCacheService
     ) {
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
@@ -52,6 +54,7 @@ public class BalanceService {
         this.expenseShareRepository = expenseShareRepository;
         this.settlementRepository = settlementRepository;
         this.debtSimplifier = debtSimplifier;
+        this.groupBalanceCacheService = groupBalanceCacheService;
     }
 
     /**
@@ -108,71 +111,14 @@ public class BalanceService {
 
     @Transactional(readOnly = true)
     public GroupBalanceResponse getGroupBalances(UUID groupId, UUID callerId) {
-        Group group = groupRepository.findById(groupId)
+        groupRepository.findById(groupId)
                 .orElseThrow(() -> ApiException.notFound("Group not found", "GROUP_NOT_FOUND"));
 
         if (!groupMemberRepository.existsByGroupIdAndUserId(groupId, callerId)) {
             throw ApiException.forbidden("You must be a member of this group to view balances", "NOT_A_GROUP_MEMBER");
         }
 
-        List<GroupMember> members = groupMemberRepository.findByGroupIdWithUser(groupId);
-
-        BigDecimal totalGroupSpend = BigDecimal.ZERO;
-        List<Expense> groupExpenses = expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId);
-        for (Expense expense : groupExpenses) {
-            totalGroupSpend = totalGroupSpend.add(expense.getAmount());
-        }
-        totalGroupSpend = totalGroupSpend.setScale(2, RoundingMode.HALF_EVEN);
-
-        Map<UUID, BigDecimal> paidMap = expenseRepository.findTotalPaidPerUserInGroup(groupId).stream()
-                .collect(Collectors.toMap(UserAmountDto::userId, UserAmountDto::amount));
-        Map<UUID, BigDecimal> owedMap = expenseShareRepository.findTotalOwedPerUserInGroup(groupId).stream()
-                .collect(Collectors.toMap(UserAmountDto::userId, UserAmountDto::amount));
-        Map<UUID, BigDecimal> settlementsPaidMap = settlementRepository.findTotalSettlementsPaidPerUserInGroup(groupId).stream()
-                .collect(Collectors.toMap(UserAmountDto::userId, UserAmountDto::amount));
-        Map<UUID, BigDecimal> settlementsReceivedMap = settlementRepository.findTotalSettlementsReceivedPerUserInGroup(groupId).stream()
-                .collect(Collectors.toMap(UserAmountDto::userId, UserAmountDto::amount));
-
-        List<UserBalanceDto> balanceDtos = new ArrayList<>();
-        for (GroupMember gm : members) {
-            User user = gm.getUser();
-            BigDecimal sumPaid = paidMap.getOrDefault(user.getId(), BigDecimal.ZERO);
-            BigDecimal sumOwed = owedMap.getOrDefault(user.getId(), BigDecimal.ZERO);
-            BigDecimal sumSettledPaid = settlementsPaidMap.getOrDefault(user.getId(), BigDecimal.ZERO);
-            BigDecimal sumSettledReceived = settlementsReceivedMap.getOrDefault(user.getId(), BigDecimal.ZERO);
-
-            BigDecimal netBalance = sumPaid.subtract(sumOwed)
-                    .add(sumSettledPaid)
-                    .subtract(sumSettledReceived)
-                    .setScale(2, RoundingMode.HALF_EVEN);
-
-            String status;
-            if (netBalance.compareTo(new BigDecimal("0.005")) > 0) {
-                status = "IS_OWED";
-            } else if (netBalance.compareTo(new BigDecimal("-0.005")) < 0) {
-                status = "OWES";
-            } else {
-                status = "SETTLED";
-            }
-
-            balanceDtos.add(new UserBalanceDto(
-                    user.getId(),
-                    user.getDisplayName(),
-                    user.getEmail(),
-                    netBalance,
-                    status,
-                    sumPaid.setScale(2, RoundingMode.HALF_EVEN),
-                    sumOwed.setScale(2, RoundingMode.HALF_EVEN)
-            ));
-        }
-
-        return new GroupBalanceResponse(
-                group.getId(),
-                group.getName(),
-                group.getDefaultCurrency(),
-                totalGroupSpend,
-                balanceDtos
-        );
+        return groupBalanceCacheService.calculateGroupBalances(groupId);
     }
 
     @Transactional(readOnly = true)

@@ -49,6 +49,7 @@ public class UserService {
     private final AuditService auditService;
     private final PasswordEncoder passwordEncoder;
     private final CookieFactory cookieFactory;
+    private final com.settl.backend.settlement.GroupBalanceCacheEvictor groupBalanceCacheEvictor;
 
     public UserService(
             UserRepository userRepository,
@@ -62,7 +63,8 @@ public class UserService {
             RefreshTokenRepository refreshTokenRepository,
             AuditService auditService,
             PasswordEncoder passwordEncoder,
-            CookieFactory cookieFactory
+            CookieFactory cookieFactory,
+            com.settl.backend.settlement.GroupBalanceCacheEvictor groupBalanceCacheEvictor
     ) {
         this.userRepository = userRepository;
         this.groupRepository = groupRepository;
@@ -76,6 +78,7 @@ public class UserService {
         this.auditService = auditService;
         this.passwordEncoder = passwordEncoder;
         this.cookieFactory = cookieFactory;
+        this.groupBalanceCacheEvictor = groupBalanceCacheEvictor;
     }
 
     @Transactional
@@ -197,6 +200,12 @@ public class UserService {
             userRepository.save(user);
             log.info("User id={} PII scrubbed and anonymized, freeing original email", userId);
         }
+
+        List<UUID> affectedGroupIds = memberships.stream()
+                .map(gm -> gm.getGroup().getId())
+                .distinct()
+                .toList();
+        groupBalanceCacheEvictor.evictGroupBalances(affectedGroupIds);
 
         // Clear refresh token cookie
         return cookieFactory.createClearRefreshTokenCookie();

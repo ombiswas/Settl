@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -42,6 +43,7 @@ public class ExpenseService {
     private final UserRepository userRepository;
     private final SplitCalculator splitCalculator;
     private final AuditService auditService;
+    private final com.settl.backend.settlement.GroupBalanceCacheEvictor groupBalanceCacheEvictor;
 
     public ExpenseService(
             ExpenseRepository expenseRepository,
@@ -50,7 +52,8 @@ public class ExpenseService {
             GroupMemberRepository groupMemberRepository,
             UserRepository userRepository,
             SplitCalculator splitCalculator,
-            AuditService auditService
+            AuditService auditService,
+            com.settl.backend.settlement.GroupBalanceCacheEvictor groupBalanceCacheEvictor
     ) {
         this.expenseRepository = expenseRepository;
         this.expenseShareRepository = expenseShareRepository;
@@ -59,6 +62,7 @@ public class ExpenseService {
         this.userRepository = userRepository;
         this.splitCalculator = splitCalculator;
         this.auditService = auditService;
+        this.groupBalanceCacheEvictor = groupBalanceCacheEvictor;
     }
 
     @Transactional
@@ -133,6 +137,8 @@ public class ExpenseService {
         details.put("splitType", savedExpense.getSplitType().name());
         details.put("paidBy", payer.getDisplayName());
         auditService.logActivity(group, payer, AuditAction.EXPENSE_CREATED, details);
+
+        groupBalanceCacheEvictor.evictGroupBalances(groupId);
 
         return mapToExpenseResponse(savedExpense);
     }
@@ -236,16 +242,27 @@ public class ExpenseService {
         expense.setReceiptUrl(request.receiptUrl());
         expense.setPaidBy(payer);
 
-        // Clear existing shares and add newly computed shares
-        expense.getShares().clear();
+        // Update existing shares, remove omitted ones, and add new ones to avoid unique constraint violation on flush
+        Map<UUID, ExpenseShare> existingShareMap = expense.getShares().stream()
+                .collect(Collectors.toMap(s -> s.getUser().getId(), Function.identity()));
+
+        expense.getShares().removeIf(s -> !computedShares.containsKey(s.getUser().getId()));
+
         for (Map.Entry<UUID, BigDecimal> entry : computedShares.entrySet()) {
-            User shareUser = userMap.get(entry.getKey());
-            if (shareUser == null) {
-                shareUser = userRepository.findById(entry.getKey())
-                        .orElseThrow(() -> ApiException.notFound("Split user not found", "USER_NOT_FOUND"));
+            UUID shareUserId = entry.getKey();
+            BigDecimal amountOwed = entry.getValue();
+            ExpenseShare existing = existingShareMap.get(shareUserId);
+            if (existing != null) {
+                existing.setAmountOwed(amountOwed);
+            } else {
+                User shareUser = userMap.get(shareUserId);
+                if (shareUser == null) {
+                    shareUser = userRepository.findById(shareUserId)
+                            .orElseThrow(() -> ApiException.notFound("Split user not found", "USER_NOT_FOUND"));
+                }
+                ExpenseShare share = new ExpenseShare(expense, shareUser, amountOwed);
+                expense.addShare(share);
             }
-            ExpenseShare share = new ExpenseShare(expense, shareUser, entry.getValue());
-            expense.addShare(share);
         }
 
         Expense updatedExpense = expenseRepository.save(expense);
@@ -258,6 +275,8 @@ public class ExpenseService {
         details.put("currency", updatedExpense.getCurrency());
         details.put("editedBy", callerMembership.getUser().getDisplayName());
         auditService.logActivity(group, callerMembership.getUser(), AuditAction.EXPENSE_UPDATED, details);
+
+        groupBalanceCacheEvictor.evictGroupBalances(groupId);
 
         return mapToExpenseResponse(updatedExpense);
     }
@@ -290,6 +309,8 @@ public class ExpenseService {
         auditService.logActivity(group, callerMembership.getUser(), AuditAction.EXPENSE_DELETED, details);
 
         expenseRepository.delete(expense);
+
+        groupBalanceCacheEvictor.evictGroupBalances(groupId);
     }
 
     private void verifyMembership(UUID groupId, UUID callerId) {
