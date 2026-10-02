@@ -25,6 +25,7 @@ import type {
   AddMemberRequest,
   GroupInvitation,
   InvitationPreview,
+  ResendVerificationResponse,
 } from '../types/api'
 
 const apiBase = ((import.meta as { env?: { VITE_API_BASE_URL?: string } }).env?.VITE_API_BASE_URL)?.replace(/\/+$/, '') || '/api'
@@ -142,7 +143,7 @@ export const authApi = {
     apiClient.get<ApiResponse<string>>('/auth/verify', { params: { token } }),
 
   resendVerification: (email: string) =>
-    apiClient.post<ApiResponse<string>>('/auth/resend-verification', { email }),
+    apiClient.post<ApiResponse<ResendVerificationResponse>>('/auth/resend-verification', { email }),
 }
 
 export const usersApi = {

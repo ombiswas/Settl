@@ -204,4 +204,52 @@ class AuthControllerTest {
                 .andExpect(header().exists(HttpHeaders.SET_COOKIE))
                 .andExpect(jsonPath("$.success").value(true));
     }
+
+    @Test
+    void resendVerificationForAlreadyVerifiedUserShouldReturnAlreadyVerifiedMessage() throws Exception {
+        User user = new User("already.verified@example.com", passwordEncoder.encode("Pass123!"), "Verified User");
+        user.setEmailVerified(true);
+        userRepository.save(user);
+
+        ResendVerificationRequest request = new ResendVerificationRequest("already.verified@example.com");
+
+        mockMvc.perform(post("/api/auth/resend-verification")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("Your email is already verified."))
+                .andExpect(jsonPath("$.data.alreadyVerified").value(true))
+                .andExpect(jsonPath("$.data.message").value("Your email is already verified."));
+    }
+
+    @Test
+    void resendVerificationForUnverifiedUserShouldReturnGenericMessage() throws Exception {
+        User user = new User("needs.verify@example.com", passwordEncoder.encode("Pass123!"), "Needs Verify");
+        user.setEmailVerified(false);
+        userRepository.save(user);
+
+        ResendVerificationRequest request = new ResendVerificationRequest("needs.verify@example.com");
+
+        mockMvc.perform(post("/api/auth/resend-verification")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.alreadyVerified").value(false))
+                .andExpect(jsonPath("$.data.message").value("If an account with that email exists and is unverified, a verification link has been sent."));
+    }
+
+    @Test
+    void resendVerificationForUnknownEmailShouldReturnIdenticalGenericMessage() throws Exception {
+        ResendVerificationRequest request = new ResendVerificationRequest("unknown.user@example.com");
+
+        mockMvc.perform(post("/api/auth/resend-verification")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.alreadyVerified").value(false))
+                .andExpect(jsonPath("$.data.message").value("If an account with that email exists and is unverified, a verification link has been sent."));
+    }
 }

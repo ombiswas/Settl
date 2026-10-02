@@ -18,6 +18,11 @@ export interface AuthResponse {
   accessToken: string
 }
 
+export interface ResendVerificationResponse {
+  message: string
+  alreadyVerified: boolean
+}
+
 export interface GroupMember {
   userId: string
   email: string

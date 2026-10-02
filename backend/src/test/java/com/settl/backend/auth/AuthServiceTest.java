@@ -4,6 +4,7 @@ import com.settl.backend.auth.dto.LoginRequest;
 import com.settl.backend.auth.dto.RegisterRequest;
 import com.settl.backend.auth.dto.RegisterResponse;
 import com.settl.backend.auth.dto.ResendVerificationRequest;
+import com.settl.backend.auth.dto.ResendVerificationResponse;
 import com.settl.backend.auth.dto.VerifyEmailResponse;
 import com.settl.backend.audit.AuditService;
 import com.settl.backend.common.ApiException;
@@ -273,5 +274,47 @@ class AuthServiceTest {
         assertThat(token.isRevoked()).isTrue();
         assertThat(cookie.getMaxAge().getSeconds()).isEqualTo(0);
         verify(refreshTokenRepository).save(token);
+    }
+
+    @Test
+    void resendVerificationForAlreadyVerifiedUserShouldReturnAlreadyVerifiedMessageAndNotSendEmail() {
+        User user = new User("verified@example.com", "hash", "Verified User");
+        user.setId(UUID.randomUUID());
+        user.setEmailVerified(true);
+
+        when(userRepository.findByEmail("verified@example.com")).thenReturn(Optional.of(user));
+
+        ResendVerificationResponse response = authService.resendVerification(new ResendVerificationRequest("verified@example.com"));
+
+        assertThat(response.alreadyVerified()).isTrue();
+        assertThat(response.message()).isEqualTo("Your email is already verified.");
+        verify(emailService, never()).sendVerificationEmail(any(), any(), any());
+    }
+
+    @Test
+    void resendVerificationForUnverifiedUserShouldDispatchEmailAndReturnGenericMessage() {
+        User user = new User("unverified@example.com", "hash", "Unverified User");
+        user.setId(UUID.randomUUID());
+        user.setEmailVerified(false);
+
+        when(userRepository.findByEmail("unverified@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenReturn(user);
+
+        ResendVerificationResponse response = authService.resendVerification(new ResendVerificationRequest("unverified@example.com"));
+
+        assertThat(response.alreadyVerified()).isFalse();
+        assertThat(response.message()).contains("If an account with that email exists and is unverified");
+        verify(emailService).sendVerificationEmail(eq("unverified@example.com"), eq("Unverified User"), anyString());
+    }
+
+    @Test
+    void resendVerificationForNonExistentUserShouldReturnGenericMessageAndNotSendEmail() {
+        when(userRepository.findByEmail("nonexistent@example.com")).thenReturn(Optional.empty());
+
+        ResendVerificationResponse response = authService.resendVerification(new ResendVerificationRequest("nonexistent@example.com"));
+
+        assertThat(response.alreadyVerified()).isFalse();
+        assertThat(response.message()).contains("If an account with that email exists and is unverified");
+        verify(emailService, never()).sendVerificationEmail(any(), any(), any());
     }
 }

@@ -5,6 +5,7 @@ import com.settl.backend.auth.dto.LoginRequest;
 import com.settl.backend.auth.dto.RegisterRequest;
 import com.settl.backend.auth.dto.RegisterResponse;
 import com.settl.backend.auth.dto.ResendVerificationRequest;
+import com.settl.backend.auth.dto.ResendVerificationResponse;
 import com.settl.backend.auth.dto.UserDto;
 import com.settl.backend.auth.dto.VerifyEmailResponse;
 import com.settl.backend.common.ApiResponse;
@@ -56,13 +57,10 @@ public class AuthController {
 
     @PostMapping("/resend-verification")
     @RateLimited(limit = 3, windowSeconds = 3600, keyPrefix = "resend_verification", type = RateLimitType.IP)
-    @Operation(summary = "Resend verification email", description = "Dispatches a new verification token to the user email if unverified (Limit: 3/hour/IP)")
-    public ResponseEntity<ApiResponse<Void>> resendVerification(@Valid @RequestBody ResendVerificationRequest request) {
-        authService.resendVerification(request);
-        return ResponseEntity.ok(ApiResponse.success(
-                null,
-                "If an account with that email exists and is unverified, a verification link has been sent."
-        ));
+    @Operation(summary = "Resend verification email", description = "Dispatches a new verification token to the user email if unverified, or notifies if already verified (Limit: 3/hour/IP)")
+    public ResponseEntity<ApiResponse<ResendVerificationResponse>> resendVerification(@Valid @RequestBody ResendVerificationRequest request) {
+        ResendVerificationResponse response = authService.resendVerification(request);
+        return ResponseEntity.ok(ApiResponse.success(response, response.message()));
     }
 
     @PostMapping("/login")

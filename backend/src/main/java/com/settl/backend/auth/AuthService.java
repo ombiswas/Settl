@@ -5,6 +5,7 @@ import com.settl.backend.auth.dto.LoginRequest;
 import com.settl.backend.auth.dto.RegisterRequest;
 import com.settl.backend.auth.dto.RegisterResponse;
 import com.settl.backend.auth.dto.ResendVerificationRequest;
+import com.settl.backend.auth.dto.ResendVerificationResponse;
 import com.settl.backend.auth.dto.UserDto;
 import com.settl.backend.auth.dto.VerifyEmailResponse;
 import com.settl.backend.common.ApiException;
@@ -183,26 +184,33 @@ public class AuthService {
     }
 
     @Transactional
-    public void resendVerification(ResendVerificationRequest request) {
+    public ResendVerificationResponse resendVerification(ResendVerificationRequest request) {
         String normalizedEmail = request.email().trim().toLowerCase();
         Optional<User> userOpt = userRepository.findByEmail(normalizedEmail);
 
         if (userOpt.isPresent()) {
             User user = userOpt.get();
-            if (!user.isEmailVerified()) {
-                String rawToken = generateSecureToken();
-                String hashedToken = hashToken(rawToken);
-
-                user.setVerificationToken(hashedToken);
-                user.setVerificationTokenExpiresAt(Instant.now().plus(24, ChronoUnit.HOURS));
-                userRepository.save(user);
-
-                String verificationUrl = appBaseUrl.split(",")[0].trim() + "/verify?token=" + rawToken;
-                emailService.sendVerificationEmail(user.getEmail(), user.getDisplayName(), verificationUrl);
-
-                log.info("Resent verification email for user id={}", user.getId());
+            if (user.isEmailVerified()) {
+                log.info("Resend verification requested for already verified user id={}", user.getId());
+                return new ResendVerificationResponse("Your email is already verified.", true);
             }
+
+            String rawToken = generateSecureToken();
+            String hashedToken = hashToken(rawToken);
+
+            user.setVerificationToken(hashedToken);
+            user.setVerificationTokenExpiresAt(Instant.now().plus(24, ChronoUnit.HOURS));
+            userRepository.save(user);
+
+            String verificationUrl = appBaseUrl.split(",")[0].trim() + "/verify?token=" + rawToken;
+            emailService.sendVerificationEmail(user.getEmail(), user.getDisplayName(), verificationUrl);
+
+            log.info("Resent verification email for user id={}", user.getId());
+            return new ResendVerificationResponse("If an account with that email exists and is unverified, a verification link has been sent.", false);
         }
+
+        log.info("Resend verification requested for non-existent email={}", normalizedEmail);
+        return new ResendVerificationResponse("If an account with that email exists and is unverified, a verification link has been sent.", false);
     }
 
     @Transactional

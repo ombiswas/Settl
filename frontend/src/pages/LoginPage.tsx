@@ -65,8 +65,8 @@ export const LoginPage: React.FC = () => {
     if (!unverifiedEmail) return
     setIsResending(true)
     try {
-      await authApi.resendVerification(unverifiedEmail)
-      setResendStatus('Verification email resent! Please check your inbox.')
+      const res = await authApi.resendVerification(unverifiedEmail)
+      setResendStatus(res.data.data?.message || res.data.message || 'Verification email resent! Please check your inbox.')
     } catch {
       setResendStatus('Failed to resend email. Please try again shortly.')
     } finally {

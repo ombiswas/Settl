@@ -18,8 +18,8 @@ export const CheckEmailPage: React.FC = () => {
     setResendStatus(null)
 
     try {
-      await authApi.resendVerification(email)
-      setResendStatus('A new verification email has been dispatched!')
+      const res = await authApi.resendVerification(email)
+      setResendStatus(res.data.data?.message || res.data.message || 'A new verification email has been dispatched!')
     } catch {
       setError('Could not resend email at this moment. Please check rate limits or try again shortly.')
     } finally {
