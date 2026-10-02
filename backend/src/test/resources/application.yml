@@ -29,6 +29,8 @@ app:
     access-token-expiration-ms: 900000
     refresh-token-expiration-ms: 604800000
   secure-cookies: ${SECURE_COOKIES:false}
+  token-cleanup:
+    cron: ${TOKEN_CLEANUP_CRON:0 0 3 * * *}
   rate-limit:
     login:
       limit: ${RATE_LIMIT_LOGIN:5}
