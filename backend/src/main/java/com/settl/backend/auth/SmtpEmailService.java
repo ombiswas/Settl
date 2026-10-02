@@ -49,8 +49,8 @@ public class SmtpEmailService implements EmailService {
 
             mailSender.send(message);
             log.info("Verification email successfully dispatched to {}", toEmail);
-        } catch (MessagingException | RuntimeException ex) {
-            log.error("Failed to send verification email to {}. Fallback link: {}", toEmail, verificationUrl, ex);
+        } catch (MessagingException ex) {
+            throw new RuntimeException("Failed to prepare verification email message", ex);
         }
     }
 
@@ -134,8 +134,8 @@ public class SmtpEmailService implements EmailService {
 
             mailSender.send(message);
             log.info("Group invitation email successfully dispatched to {}", toEmail);
-        } catch (MessagingException | RuntimeException ex) {
-            log.error("Failed to send group invitation email to {}. Link: {}", toEmail, actionUrl, ex);
+        } catch (MessagingException ex) {
+            throw new RuntimeException("Failed to prepare group invitation email message", ex);
         }
     }
 

@@ -23,6 +23,12 @@ spring:
     locations: classpath:db/migration
 
 app:
+  mail:
+    async:
+      core-pool-size: 2
+      max-pool-size: 5
+      queue-capacity: 50
+      thread-name-prefix: mail-async-
   jwt:
     secret: c2V0dGwtZGV2ZWxvcG1lbnQtYW5kLXRlc3Qtand0LXNlY3JldC1rZXktbXVzdC1iZS1hdC1sZWFzdC0yNTYtYml0cy1sb25nLWZvci1obWFjLXNoYS0yNTY=
     refresh-secret: c2V0dGwtZGV2ZWxvcG1lbnQtYW5kLXRlc3QtcmVmcmVzaC1zZWNyZXQta2V5LW11c3QtYmUtYXQtbGVhc3QtMjU2LWJpdHMtbG9uZw==
