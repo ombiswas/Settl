@@ -43,7 +43,8 @@ export const Navbar: React.FC = () => {
   }
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-slate-200 bg-white/95 backdrop-blur">
+    <>
+      <header className="sticky top-0 z-40 w-full border-b border-slate-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
         {/* Brand */}
         <div className="flex items-center gap-8">
@@ -172,11 +173,13 @@ export const Navbar: React.FC = () => {
         </div>
       )}
 
+      </header>
+
       {/* Account Settings Modal */}
       <AccountSettingsModal
         isOpen={showSettingsModal}
         onClose={() => setShowSettingsModal(false)}
       />
-    </header>
+    </>
   )
 }

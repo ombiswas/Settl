@@ -186,7 +186,8 @@ class UserServiceTest {
         verify(expenseRepository).deletePersonalExpensesByUserId(userId);
         verify(recurringExpenseRepository).deleteByPaidById(userId);
         verify(refreshTokenRepository).deleteAllByUser(user);
-        verify(userRepository).delete(user);
+        verify(groupMemberRepository).deleteAllByUserId(userId);
+        verify(userRepository).deleteUserById(userId);
     }
 
     @Test
@@ -201,7 +202,7 @@ class UserServiceTest {
         ResponseCookie cookie = userService.deleteAccount(userId, request);
 
         assertThat(cookie.getMaxAge().getSeconds()).isZero();
-        verify(userRepository, never()).delete(user);
+        verify(userRepository, never()).deleteUserById(any());
         verify(userRepository).save(user);
 
         assertThat(user.getDisplayName()).isEqualTo("Former Member");
@@ -230,7 +231,9 @@ class UserServiceTest {
 
         userService.deleteAccount(userId, request);
 
-        verify(groupRepository).delete(soloGroup);
-        verify(userRepository).delete(user);
+        verify(groupMemberRepository).deleteAllByGroupId(soloGroup.getId());
+        verify(groupRepository).deleteGroupById(soloGroup.getId());
+        verify(groupMemberRepository).deleteAllByUserId(userId);
+        verify(userRepository).deleteUserById(userId);
     }
 }

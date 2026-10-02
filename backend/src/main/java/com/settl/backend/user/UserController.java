@@ -14,6 +14,7 @@ import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -33,7 +34,7 @@ public class UserController {
     @RateLimited(limit = 3, windowSeconds = 900, keyPrefix = "delete_account", type = RateLimitType.USER_OR_IP)
     @Operation(
             summary = "Delete user account",
-            description = "Permanently deletes or anonymizes user account after verifying password and checking for zero balances and admin constraints",
+            description = "Permanently deletes user account after verifying password and checking for zero balances and admin constraints",
             security = @SecurityRequirement(name = "BearerAuth")
     )
     public ResponseEntity<ApiResponse<Void>> deleteAccount(
@@ -44,5 +45,19 @@ public class UserController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, clearCookie.toString())
                 .body(ApiResponse.success(null, "Account successfully deleted. All personal data and sessions have been purged."));
+    }
+
+    @PostMapping("/me/delete")
+    @RateLimited(limit = 3, windowSeconds = 900, keyPrefix = "delete_account", type = RateLimitType.USER_OR_IP)
+    @Operation(
+            summary = "Delete user account (POST alternative)",
+            description = "Alternative endpoint for clients/proxies that drop DELETE request payloads",
+            security = @SecurityRequirement(name = "BearerAuth")
+    )
+    public ResponseEntity<ApiResponse<Void>> deleteAccountPost(
+            @AuthenticationPrincipal CustomUserPrincipal principal,
+            @Valid @RequestBody DeleteAccountRequest request
+    ) {
+        return deleteAccount(principal, request);
     }
 }

@@ -152,7 +152,8 @@ public class UserService {
 
         // Action 2: Delete solo groups where user was the only member
         for (Group soloGroup : soloGroupsToDelete) {
-            groupRepository.delete(soloGroup);
+            groupMemberRepository.deleteAllByGroupId(soloGroup.getId());
+            groupRepository.deleteGroupById(soloGroup.getId());
             log.info("Deleted solo group id='{}' (name='{}') on account deletion of user id={}",
                     soloGroup.getId(), soloGroup.getName(), userId);
         }
@@ -173,7 +174,8 @@ public class UserService {
 
         if (sharedExpenses == 0 && sharedShares == 0 && sharedSettlements == 0) {
             // Zero historical shared expenses in other groups -> Full hard delete
-            userRepository.delete(user);
+            groupMemberRepository.deleteAllByUserId(userId);
+            userRepository.deleteUserById(userId);
             log.info("User id={} permanently deleted from database (no shared history)", userId);
         } else {
             // Has shared historical records in groups -> Scrub PII & release original email for re-registration

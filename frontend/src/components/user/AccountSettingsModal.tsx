@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useAuthStore } from '../../store/authStore'
 import { usersApi } from '../../api/client'
 import { useNavigate } from 'react-router-dom'
@@ -31,6 +32,37 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({ isOp
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
+  const resetDeleteState = () => {
+    setShowDeleteConfirm(false)
+    setPassword('')
+    setConfirmation('')
+    setErrorMessage(null)
+  }
+
+  const handleModalClose = () => {
+    resetDeleteState()
+    onClose()
+  }
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleModalClose()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    const originalOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      document.body.style.overflow = originalOverflow
+    }
+  }, [isOpen])
+
   if (!isOpen) return null
 
   const handleDeleteAccount = async (e: React.FormEvent) => {
@@ -49,32 +81,30 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({ isOp
       queryClient.clear()
       onClose()
       navigate('/login?deleted=true')
-    } catch (err: any) {
-      const message =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        'Failed to delete account. Please verify your password and group statuses.'
+    } catch (err: unknown) {
+      let message = 'Failed to delete account. Please verify your password and group statuses.'
+      if (err && typeof err === 'object' && 'response' in err) {
+        const axiosErr = err as { response?: { data?: { message?: string; error?: string } } }
+        message = axiosErr.response?.data?.message || axiosErr.response?.data?.error || message
+      }
       setErrorMessage(message)
     } finally {
       setIsLoading(false)
     }
   }
 
-  const resetDeleteState = () => {
-    setShowDeleteConfirm(false)
-    setPassword('')
-    setConfirmation('')
-    setErrorMessage(null)
-  }
-
-  const handleModalClose = () => {
-    resetDeleteState()
-    onClose()
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="relative w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl transition-all">
+  return createPortal(
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) handleModalClose()
+      }}
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-xs p-4 sm:p-6"
+    >
+      <div className="flex min-h-full items-center justify-center">
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="relative w-full max-w-lg my-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl transition-all"
+        >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
           <div className="flex items-center gap-2.5">
@@ -227,7 +257,9 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({ isOp
             Close
           </button>
         </div>
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
