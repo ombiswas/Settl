@@ -4,5 +4,4 @@ target/
 *.log
 .idea/
 .vscode/
-docs/
-full_code_review_plan.md
+SETUP.md
